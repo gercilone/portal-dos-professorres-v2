@@ -199,6 +199,7 @@ export default function CoordGlobalSubjects() {
     setIsLoading(true);
     try {
       const updatedWorkloadsList = [...workloads];
+      const savePromises: Promise<any>[] = [];
 
       for (const classId of selectedClassIds) {
         // Find if workload already exists for this class and subject
@@ -213,7 +214,7 @@ export default function CoordGlobalSubjects() {
           teacherUsername: selectedTeacherUsername || ''
         };
 
-        await saveGlobalWorkload(newWl);
+        savePromises.push(saveGlobalWorkload(newWl));
 
         if (existingIndex !== -1) {
           updatedWorkloadsList[existingIndex] = newWl;
@@ -221,6 +222,8 @@ export default function CoordGlobalSubjects() {
           updatedWorkloadsList.push(newWl);
         }
       }
+
+      await Promise.all(savePromises);
 
       setWorkloads(updatedWorkloadsList);
       setSelectedClassIds([]); // Reset selected classes

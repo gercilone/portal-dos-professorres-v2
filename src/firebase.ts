@@ -69,12 +69,13 @@ export interface ProfessorAccount {
 }
 
 // Timeout utility to ensure network calls do not block forever in sandboxed/offline-prone environments
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 20000): Promise<T> {
+  const actualTimeout = Math.max(timeoutMs, 20000); // Ensure at least 20 seconds for slow networks
   let timeoutId: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new Error('Timeout reached'));
-    }, timeoutMs);
+    }, actualTimeout);
   });
   return Promise.race([promise, timeoutPromise]).finally(() => {
     clearTimeout(timeoutId);
