@@ -1,0 +1,6 @@
+{
+  "name": "Portal do Professor",
+  "description": "Aplicativo offline-first responsivo e moderno para professores gerenciarem suas turmas, alunos, diário de presença, anotações de vistos, notas e relatórios bimonthly.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

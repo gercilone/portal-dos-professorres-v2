@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default catch-all rule: lock down everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Allow read/write access to professors profile directory for custom credentials check
+    match /professors/{username} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write access to coordinators directory for custom coordinator authentication
+    match /coordinators/{username} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write access to teacher class diaries so syncing works
+    match /diaries/{username}/{tableName}/{recordId} {
+      allow read, write: if true;
+    }
+
+    // Allow read/write access to global schools, classes and students
+    match /global_schools/{schoolId} {
+      allow read, write: if true;
+    }
+    match /global_classes/{classId} {
+      allow read, write: if true;
+    }
+    match /global_students/{studentId} {
+      allow read, write: if true;
+    }
+    match /global_subjects/{subjectId} {
+      allow read, write: if true;
+    }
+    match /global_workloads/{workloadId} {
+      allow read, write: if true;
+    }
+  }
+}

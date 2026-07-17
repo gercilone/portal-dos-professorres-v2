@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "Professor": {
+      "title": "Professor",
+      "description": "Professor account details for custom auth.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "teacherName": { "type": "string" },
+        "dbName": { "type": "string" },
+        "passwordHint": { "type": "string" },
+        "securityQuestion": { "type": "string" },
+        "securityAnswer": { "type": "string" },
+        "authEnabled": { "type": "boolean" }
+      },
+      "required": ["username", "password", "teacherName", "dbName"]
+    },
+    "Coordinator": {
+      "title": "Coordinator",
+      "description": "Coordinator account details for custom auth.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["username", "password", "name"]
+    },
+    "DiaryRecord": {
+      "title": "DiaryRecord",
+      "description": "Generic structure for school diary records (e.g. students, grades, lessons).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "number" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/professors/{username}": {
+      "schema": "Professor",
+      "description": "All registered professor accounts"
+    },
+    "/coordinators/{username}": {
+      "schema": "Coordinator",
+      "description": "All registered coordinator accounts"
+    },
+    "/diaries/{username}/{tableName}/{recordId}": {
+      "schema": "DiaryRecord",
+      "description": "Subcollections of class diary entities"
+    }
+  }
+}

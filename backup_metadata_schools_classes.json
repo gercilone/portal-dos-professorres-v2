@@ -1,0 +1,295 @@
+{
+  "version": 6,
+  "schools": [
+    {
+      "id": 3,
+      "name": "01 ECIM 15 DE JUNHO"
+    },
+    {
+      "id": 1,
+      "name": "02 MANOEL MACHADO"
+    }
+  ],
+  "classes": [
+    {
+      "id": 17,
+      "name": "6° ano A",
+      "schoolId": 1
+    },
+    {
+      "id": 14,
+      "name": "6° ano B",
+      "schoolId": 1
+    },
+    {
+      "id": 15,
+      "name": "7° ano A",
+      "schoolId": 1
+    },
+    {
+      "id": 16,
+      "name": "7° ano B",
+      "schoolId": 1
+    },
+    {
+      "id": 21,
+      "name": "8° ano B",
+      "schoolId": 3
+    },
+    {
+      "id": 22,
+      "name": "8° ano C",
+      "schoolId": 3
+    },
+    {
+      "id": 13,
+      "name": "8° ano U",
+      "schoolId": 1
+    },
+    {
+      "id": 18,
+      "name": "9° ano A",
+      "schoolId": 3
+    },
+    {
+      "id": 19,
+      "name": "9° ano B",
+      "schoolId": 3
+    },
+    {
+      "id": 20,
+      "name": "9° ano C",
+      "schoolId": 3
+    }
+  ],
+  "subjects": [
+    {
+      "id": 10,
+      "name": "Matemática"
+    }
+  ],
+  "subjectWorkloads": [
+    {
+      "id": 21,
+      "classId": 17,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 22,
+      "classId": 14,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 23,
+      "classId": 15,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 24,
+      "classId": 16,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 27,
+      "classId": 13,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 28,
+      "classId": 18,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 29,
+      "classId": 19,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 30,
+      "classId": 20,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 31,
+      "classId": 21,
+      "subjectName": "Matemática",
+      "workload": 40
+    },
+    {
+      "id": 32,
+      "classId": 22,
+      "subjectName": "Matemática",
+      "workload": 40
+    }
+  ],
+  "weeklySchedules": [
+    {
+      "id": 57,
+      "dayOfWeek": 1,
+      "schoolId": 3,
+      "classId": 20,
+      "subjectName": "Matemática",
+      "hourSlot": "07:00 - 09:00"
+    },
+    {
+      "id": 58,
+      "dayOfWeek": 1,
+      "schoolId": 3,
+      "classId": 21,
+      "subjectName": "Matemática",
+      "hourSlot": "09:15 - 11:15"
+    },
+    {
+      "id": 51,
+      "dayOfWeek": 1,
+      "schoolId": 1,
+      "classId": 15,
+      "subjectName": "Matemática",
+      "hourSlot": "13:00 - 15:00"
+    },
+    {
+      "id": 52,
+      "dayOfWeek": 1,
+      "schoolId": 1,
+      "classId": 16,
+      "subjectName": "Matemática",
+      "hourSlot": "15:15 - 17:15"
+    },
+    {
+      "id": 59,
+      "dayOfWeek": 2,
+      "schoolId": 3,
+      "classId": 19,
+      "subjectName": "Matemática",
+      "hourSlot": "07:00 - 09:00"
+    },
+    {
+      "id": 60,
+      "dayOfWeek": 2,
+      "schoolId": 3,
+      "classId": 18,
+      "subjectName": "Matemática",
+      "hourSlot": "09:15 - 11:15"
+    },
+    {
+      "id": 53,
+      "dayOfWeek": 2,
+      "schoolId": 1,
+      "classId": 13,
+      "subjectName": "Matemática",
+      "hourSlot": "13:00 - 15:00"
+    },
+    {
+      "id": 54,
+      "dayOfWeek": 2,
+      "schoolId": 1,
+      "classId": 15,
+      "subjectName": "Matemática",
+      "hourSlot": "15:15 - 17:15"
+    },
+    {
+      "id": 61,
+      "dayOfWeek": 3,
+      "schoolId": 3,
+      "classId": 19,
+      "subjectName": "Matemática",
+      "hourSlot": "07:00 - 09:00"
+    },
+    {
+      "id": 62,
+      "dayOfWeek": 3,
+      "schoolId": 3,
+      "classId": 22,
+      "subjectName": "Matemática",
+      "hourSlot": "10:15 - 12:15"
+    },
+    {
+      "id": 55,
+      "dayOfWeek": 3,
+      "schoolId": 1,
+      "classId": 17,
+      "subjectName": "Matemática",
+      "hourSlot": "13:50 - 15:30"
+    },
+    {
+      "id": 56,
+      "dayOfWeek": 3,
+      "schoolId": 1,
+      "classId": 14,
+      "subjectName": "Matemática",
+      "hourSlot": "15:45 - 17:25"
+    },
+    {
+      "id": 63,
+      "dayOfWeek": 4,
+      "schoolId": 3,
+      "classId": 21,
+      "subjectName": "Matemática",
+      "hourSlot": "07:00 - 09:00"
+    },
+    {
+      "id": 64,
+      "dayOfWeek": 4,
+      "schoolId": 3,
+      "classId": 18,
+      "subjectName": "Matemática",
+      "hourSlot": "09:15 - 11:15"
+    },
+    {
+      "id": 47,
+      "dayOfWeek": 4,
+      "schoolId": 1,
+      "classId": 13,
+      "subjectName": "Matemática",
+      "hourSlot": "13:00 - 15:00"
+    },
+    {
+      "id": 48,
+      "dayOfWeek": 4,
+      "schoolId": 1,
+      "classId": 17,
+      "subjectName": "Matemática",
+      "hourSlot": "15:15 - 17:15"
+    },
+    {
+      "id": 65,
+      "dayOfWeek": 5,
+      "schoolId": 3,
+      "classId": 20,
+      "subjectName": "Matemática",
+      "hourSlot": "07:00 - 09:00"
+    },
+    {
+      "id": 66,
+      "dayOfWeek": 5,
+      "schoolId": 3,
+      "classId": 22,
+      "subjectName": "Matemática",
+      "hourSlot": "09:15 - 11:15"
+    },
+    {
+      "id": 49,
+      "dayOfWeek": 5,
+      "schoolId": 1,
+      "classId": 14,
+      "subjectName": "Matemática",
+      "hourSlot": "13:00 - 15:00"
+    },
+    {
+      "id": 50,
+      "dayOfWeek": 5,
+      "schoolId": 1,
+      "classId": 16,
+      "subjectName": "Matemática",
+      "hourSlot": "15:15 - 17:15"
+    }
+  ]
+}
