@@ -125,7 +125,7 @@ export async function syncProfessorsListInCloud() {
       for (const prof of localList) {
         const usernameLower = prof.username.toLowerCase();
         const cleanedProf = cleanDataForFirestore(prof);
-        await setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf);
+        await withTimeout(setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf), 4000);
         cloudList.push(prof);
       }
     }
@@ -148,9 +148,10 @@ export async function saveProfessorToCloud(prof: ProfessorAccount) {
   try {
     const usernameLower = prof.username.toLowerCase();
     const cleanedProf = cleanDataForFirestore(prof);
-    await setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf);
+    await withTimeout(setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf), 4000);
   } catch (error) {
     console.error('Error saving professor to cloud:', error);
+    throw error;
   }
 }
 
@@ -348,9 +349,10 @@ export async function saveCoordinatorToCloud(coord: CoordinatorAccount) {
   try {
     const usernameLower = coord.username.toLowerCase();
     const cleanedCoord = cleanDataForFirestore(coord);
-    await setDoc(doc(dbInstance, 'coordinators', usernameLower), cleanedCoord);
+    await withTimeout(setDoc(doc(dbInstance, 'coordinators', usernameLower), cleanedCoord), 4000);
   } catch (error) {
     console.error('Error saving coordinator to cloud:', error);
+    throw error;
   }
 }
 
@@ -360,9 +362,10 @@ export async function deleteCoordinatorFromCloud(username: string) {
 
   try {
     const usernameLower = username.toLowerCase();
-    await deleteDoc(doc(dbInstance, 'coordinators', usernameLower));
+    await withTimeout(deleteDoc(doc(dbInstance, 'coordinators', usernameLower)), 4000);
   } catch (error) {
     console.error('Error deleting coordinator from cloud:', error);
+    throw error;
   }
 }
 
@@ -372,9 +375,10 @@ export async function deleteProfessorFromCloud(username: string) {
 
   try {
     const usernameLower = username.toLowerCase();
-    await deleteDoc(doc(dbInstance, 'professors', usernameLower));
+    await withTimeout(deleteDoc(doc(dbInstance, 'professors', usernameLower)), 4000);
   } catch (error) {
     console.error('Error deleting professor from cloud:', error);
+    throw error;
   }
 }
 
@@ -420,9 +424,10 @@ export async function saveGlobalSchool(school: GlobalSchool): Promise<void> {
   if (!dbInstance) return;
   try {
     const docRef = doc(dbInstance, 'global_schools', school.id);
-    await setDoc(docRef, cleanDataForFirestore(school));
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(school)), 4000);
   } catch (error) {
     console.error('Error saving global school:', error);
+    throw error;
   }
 }
 
@@ -430,7 +435,7 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
-    await deleteDoc(doc(dbInstance, 'global_schools', schoolId));
+    await withTimeout(deleteDoc(doc(dbInstance, 'global_schools', schoolId)), 4000);
 
     const classesCol = collection(dbInstance, 'global_classes');
     const classesSnapshot = await withTimeout(getDocs(classesCol), 4000);
@@ -442,6 +447,7 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
     }
   } catch (error) {
     console.error('Error deleting global school:', error);
+    throw error;
   }
 }
 
@@ -467,9 +473,10 @@ export async function saveGlobalClass(cls: GlobalClass): Promise<void> {
   if (!dbInstance) return;
   try {
     const docRef = doc(dbInstance, 'global_classes', cls.id);
-    await setDoc(docRef, cleanDataForFirestore(cls));
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(cls)), 4000);
   } catch (error) {
     console.error('Error saving global class:', error);
+    throw error;
   }
 }
 
@@ -477,18 +484,19 @@ export async function deleteGlobalClass(classId: string): Promise<void> {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
-    await deleteDoc(doc(dbInstance, 'global_classes', classId));
+    await withTimeout(deleteDoc(doc(dbInstance, 'global_classes', classId)), 4000);
 
     const studentsCol = collection(dbInstance, 'global_students');
     const studentsSnapshot = await withTimeout(getDocs(studentsCol), 4000);
     for (const d of studentsSnapshot.docs) {
       const studData = d.data();
       if (studData.classId === classId) {
-        await deleteDoc(doc(dbInstance, 'global_students', d.id));
+        await withTimeout(deleteDoc(doc(dbInstance, 'global_students', d.id)), 4000);
       }
     }
   } catch (error) {
     console.error('Error deleting global class:', error);
+    throw error;
   }
 }
 
@@ -514,9 +522,10 @@ export async function saveGlobalStudent(student: GlobalStudent): Promise<void> {
   if (!dbInstance) return;
   try {
     const docRef = doc(dbInstance, 'global_students', student.id);
-    await setDoc(docRef, cleanDataForFirestore(student));
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(student)), 4000);
   } catch (error) {
     console.error('Error saving global student:', error);
+    throw error;
   }
 }
 
@@ -524,9 +533,10 @@ export async function deleteGlobalStudent(studentId: string): Promise<void> {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
-    await deleteDoc(doc(dbInstance, 'global_students', studentId));
+    await withTimeout(deleteDoc(doc(dbInstance, 'global_students', studentId)), 4000);
   } catch (error) {
     console.error('Error deleting global student:', error);
+    throw error;
   }
 }
 
@@ -567,9 +577,10 @@ export async function saveGlobalSubject(subject: GlobalSubject): Promise<void> {
   if (!dbInstance) return;
   try {
     const docRef = doc(dbInstance, 'global_subjects', subject.id);
-    await setDoc(docRef, cleanDataForFirestore(subject));
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(subject)), 4000);
   } catch (error) {
     console.error('Error saving global subject:', error);
+    throw error;
   }
 }
 
@@ -577,7 +588,7 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
-    await deleteDoc(doc(dbInstance, 'global_subjects', subjectId));
+    await withTimeout(deleteDoc(doc(dbInstance, 'global_subjects', subjectId)), 4000);
     
     // Also cascade delete workloads associated with this subject
     const workloadsCol = collection(dbInstance, 'global_workloads');
@@ -585,11 +596,12 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
     for (const d of workloadsSnapshot.docs) {
       const wlData = d.data();
       if (wlData.subjectId === subjectId) {
-        await deleteDoc(doc(dbInstance, 'global_workloads', d.id));
+        await withTimeout(deleteDoc(doc(dbInstance, 'global_workloads', d.id)), 4000);
       }
     }
   } catch (error) {
     console.error('Error deleting global subject:', error);
+    throw error;
   }
 }
 
@@ -615,9 +627,10 @@ export async function saveGlobalWorkload(workload: GlobalWorkload): Promise<void
   if (!dbInstance) return;
   try {
     const docRef = doc(dbInstance, 'global_workloads', workload.id);
-    await setDoc(docRef, cleanDataForFirestore(workload));
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(workload)), 4000);
   } catch (error) {
     console.error('Error saving global workload:', error);
+    throw error;
   }
 }
 
@@ -625,9 +638,10 @@ export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
-    await deleteDoc(doc(dbInstance, 'global_workloads', workloadId));
+    await withTimeout(deleteDoc(doc(dbInstance, 'global_workloads', workloadId)), 4000);
   } catch (error) {
     console.error('Error deleting global workload:', error);
+    throw error;
   }
 }
 
