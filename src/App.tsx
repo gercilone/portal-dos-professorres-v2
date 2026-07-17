@@ -109,6 +109,17 @@ export default function App() {
   const [isInspectingMode, setIsInspectingMode] = useState<boolean>(() => {
     return localStorage.getItem('portal_is_inspecting_mode') === 'true';
   });
+  const [isCloudFallbackActive, setIsCloudFallbackActive] = useState(() => {
+    return localStorage.getItem('portal_cloud_fallback') === 'true';
+  });
+
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setIsCloudFallbackActive(localStorage.getItem('portal_cloud_fallback') === 'true');
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
   const [coordinators, setCoordinators] = useState<any[]>(() => {
     const defaultCoords = [
       { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
@@ -1400,6 +1411,15 @@ export default function App() {
           </div>
         </header>
 
+        {isCloudFallbackActive && (
+          <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
+            <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+            <span className="text-left md:text-center">
+              <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador e estão prontas para teste!
+            </span>
+          </div>
+        )}
+
         {/* Dashboard Navigation Tabs */}
         <div className="bg-zinc-900/40 border-b border-zinc-800/50">
           <div className="max-w-7xl mx-auto px-4 flex items-center gap-2">
@@ -1791,6 +1811,15 @@ export default function App() {
   return (
     <div id="portal-app-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans antialiased selection:bg-blue-600/30 selection:text-blue-200">
       
+      {isCloudFallbackActive && (
+        <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
+          <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+          <span className="text-left md:text-center">
+            <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador e estão prontas para teste!
+          </span>
+        </div>
+      )}
+
       {isInspectingMode && (
         <div className="bg-amber-600 text-zinc-950 text-xs font-bold py-2.5 px-4 flex items-center justify-between gap-4 shadow-md relative z-50 animate-in slide-in-from-top duration-300 select-none">
           <div className="flex items-center gap-2">
