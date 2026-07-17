@@ -163,14 +163,19 @@ export async function syncProfessorsListInCloud() {
       }
 
       // Seed all professors atomically using writeBatch to avoid slow sequential setDoc calls
-      const batch = writeBatch(dbInstance);
-      for (const prof of localList) {
-        const usernameLower = prof.username.toLowerCase();
-        const cleanedProf = cleanDataForFirestore(prof);
-        batch.set(doc(dbInstance, 'professors', usernameLower), cleanedProf);
-        cloudList.push(prof);
+      try {
+        const batch = writeBatch(dbInstance);
+        for (const prof of localList) {
+          const usernameLower = prof.username.toLowerCase();
+          const cleanedProf = cleanDataForFirestore(prof);
+          batch.set(doc(dbInstance, 'professors', usernameLower), cleanedProf);
+          cloudList.push(prof);
+        }
+        await withTimeout(batch.commit(), 6000);
+      } catch (writeErr) {
+        console.warn('Could not seed empty cloud professors list:', writeErr);
+        handleFirestoreError(writeErr);
       }
-      await withTimeout(batch.commit(), 6000);
     }
 
     // Trust cloudList as the absolute source of truth
@@ -178,6 +183,7 @@ export async function syncProfessorsListInCloud() {
     return cloudList;
   } catch (error) {
     console.error('Error syncing professors list with cloud:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_professors_list');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -278,6 +284,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
     return true;
   } catch (error) {
     console.error(`Error pulling diary data for ${username}:`, error);
+    handleFirestoreError(error);
     return false;
   } finally {
     (window as any).isCloudSyncDisabled = false;
@@ -418,13 +425,19 @@ export interface CoordinatorAccount {
 }
 
 export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[]> {
-  const dbInstance = getFirestoreInstance();
   const defaultCoordsList = [
     { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
     { username: 'admin', password: 'admin', name: 'Administrador Geral' },
     { username: 'administrador', password: 'administrador', name: 'Administrador Geral' }
   ];
 
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_coordinators_list');
+    if (localStr) return JSON.parse(localStr);
+    return defaultCoordsList;
+  }
+
+  const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_coordinators_list');
     if (localStr) return JSON.parse(localStr);
@@ -441,9 +454,14 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     });
 
     if (cloudList.length === 0) {
-      for (const dCoord of defaultCoordsList) {
-        await saveCoordinatorToCloud(dCoord);
-        cloudList.push(dCoord);
+      try {
+        for (const dCoord of defaultCoordsList) {
+          await saveCoordinatorToCloud(dCoord);
+          cloudList.push(dCoord);
+        }
+      } catch (writeErr) {
+        console.warn('Could not seed empty cloud coordinators list:', writeErr);
+        handleFirestoreError(writeErr);
       }
     }
 
@@ -451,6 +469,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     return cloudList;
   } catch (error) {
     console.error('Error syncing coordinators list with cloud:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_coordinators_list');
     if (localStr) {
       return JSON.parse(localStr);
@@ -554,6 +573,11 @@ export interface GlobalStudent {
 }
 
 export async function getGlobalSchools(): Promise<GlobalSchool[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_schools');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_schools');
@@ -570,6 +594,7 @@ export async function getGlobalSchools(): Promise<GlobalSchool[]> {
     return schools;
   } catch (error) {
     console.error('Error getting global schools:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_schools');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -587,6 +612,8 @@ export async function saveGlobalSchool(school: GlobalSchool): Promise<void> {
   }
   localStorage.setItem('portal_global_schools', JSON.stringify(schools));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -595,6 +622,7 @@ export async function saveGlobalSchool(school: GlobalSchool): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global school:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -607,6 +635,8 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
     schools = schools.filter(s => s.id !== schoolId);
     localStorage.setItem('portal_global_schools', JSON.stringify(schools));
   }
+
+  if (isCloudFallback()) return;
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
@@ -624,11 +654,17 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
     }
   } catch (error) {
     console.error('Error deleting global school:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
 
 export async function getGlobalClasses(): Promise<GlobalClass[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_classes');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_classes');
@@ -645,6 +681,7 @@ export async function getGlobalClasses(): Promise<GlobalClass[]> {
     return classes;
   } catch (error) {
     console.error('Error getting global classes:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_classes');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -662,6 +699,8 @@ export async function saveGlobalClass(cls: GlobalClass): Promise<void> {
   }
   localStorage.setItem('portal_global_classes', JSON.stringify(classes));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -670,6 +709,7 @@ export async function saveGlobalClass(cls: GlobalClass): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global class:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -691,6 +731,8 @@ export async function deleteGlobalClass(classId: string): Promise<void> {
     localStorage.setItem('portal_global_students', JSON.stringify(students));
   }
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -707,11 +749,18 @@ export async function deleteGlobalClass(classId: string): Promise<void> {
     }
   } catch (error) {
     console.error('Error deleting global class:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
 
 export async function getGlobalStudents(): Promise<GlobalStudent[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_students');
+    const students: GlobalStudent[] = localStr ? JSON.parse(localStr) : [];
+    return students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_students');
@@ -728,6 +777,7 @@ export async function getGlobalStudents(): Promise<GlobalStudent[]> {
     return students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
   } catch (error) {
     console.error('Error getting global students:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_students');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -745,6 +795,8 @@ export async function saveGlobalStudent(student: GlobalStudent): Promise<void> {
   }
   localStorage.setItem('portal_global_students', JSON.stringify(students));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -753,6 +805,7 @@ export async function saveGlobalStudent(student: GlobalStudent): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global student:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -766,6 +819,8 @@ export async function deleteGlobalStudent(studentId: string): Promise<void> {
     localStorage.setItem('portal_global_students', JSON.stringify(students));
   }
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -773,6 +828,7 @@ export async function deleteGlobalStudent(studentId: string): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error deleting global student:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -793,6 +849,12 @@ export interface GlobalWorkload {
 }
 
 export async function getGlobalSubjects(): Promise<GlobalSubject[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_subjects');
+    const subjects: GlobalSubject[] = localStr ? JSON.parse(localStr) : [];
+    return subjects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_subjects');
@@ -809,6 +871,7 @@ export async function getGlobalSubjects(): Promise<GlobalSubject[]> {
     return subjects.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   } catch (error) {
     console.error('Error getting global subjects:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_subjects');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -826,6 +889,8 @@ export async function saveGlobalSubject(subject: GlobalSubject): Promise<void> {
   }
   localStorage.setItem('portal_global_subjects', JSON.stringify(subjects));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -834,6 +899,7 @@ export async function saveGlobalSubject(subject: GlobalSubject): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global subject:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -855,6 +921,8 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
     localStorage.setItem('portal_global_workloads', JSON.stringify(workloads));
   }
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -872,11 +940,17 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
     }
   } catch (error) {
     console.error('Error deleting global subject:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
 
 export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_workloads');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_workloads');
@@ -893,6 +967,7 @@ export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
     return workloads;
   } catch (error) {
     console.error('Error getting global workloads:', error);
+    handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_workloads');
     return localStr ? JSON.parse(localStr) : [];
   }
@@ -910,6 +985,8 @@ export async function saveGlobalWorkload(workload: GlobalWorkload): Promise<void
   }
   localStorage.setItem('portal_global_workloads', JSON.stringify(workloads));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -918,6 +995,7 @@ export async function saveGlobalWorkload(workload: GlobalWorkload): Promise<void
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global workload:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -936,6 +1014,8 @@ export async function saveGlobalWorkloadsBatch(workloadsList: GlobalWorkload[]):
   }
   localStorage.setItem('portal_global_workloads', JSON.stringify(workloads));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -948,6 +1028,7 @@ export async function saveGlobalWorkloadsBatch(workloadsList: GlobalWorkload[]):
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error saving global workloads batch:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
@@ -961,6 +1042,8 @@ export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
     localStorage.setItem('portal_global_workloads', JSON.stringify(workloads));
   }
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
   try {
@@ -968,12 +1051,15 @@ export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
     setCloudFallbackStatus(false);
   } catch (error) {
     console.error('Error deleting global workload:', error);
+    handleFirestoreError(error);
     setCloudFallbackStatus(true);
   }
 }
 
 // 6. AD-HOC SYSTEM BACKUP FETCHERS
 export async function getGradesBackup(professors: { username: string; teacherName: string }[]): Promise<any[]> {
+  if (isCloudFallback()) return [];
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return [];
 

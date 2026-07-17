@@ -1125,6 +1125,16 @@ export default function App() {
             <p className="text-sm text-zinc-500 mt-1 font-medium">Insira suas credenciais para gerenciar seus diários</p>
           </div>
 
+          {isCloudFallbackActive && (
+            <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs rounded-2xl leading-relaxed flex items-start gap-2.5 animate-in slide-in-from-top duration-300">
+              <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0 mt-1.5" />
+              <div>
+                <strong className="block mb-0.5">Controle de Contingência Offline:</strong>
+                O banco de dados na nuvem atingiu o limite de cota diário ou está indisponível. O modo local de contingência foi ativado para que você possa logar e trabalhar normalmente com os dados salvos neste navegador!
+              </div>
+            </div>
+          )}
+
           {/* Conditional: Recovery Card or Login Card */}
           {isRecoveryOpen ? (
             <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl shadow-black/50 space-y-6 animate-in fade-in zoom-in-95 duration-200">
@@ -1653,7 +1663,17 @@ export default function App() {
 
           {coordActiveTab === 'accounts' && (
             /* ACCOUNTS MODE: Create and delete accounts */
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="space-y-6">
+              {isCloudFallbackActive && (
+                <div className="p-4 bg-amber-500/10 border border-amber-500/25 text-amber-400 text-xs rounded-2xl leading-relaxed flex items-start gap-2.5 animate-in slide-in-from-top duration-300">
+                  <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0 mt-1.5" />
+                  <div>
+                    <strong className="block mb-0.5">Controle de Contingência Offline Ativo:</strong>
+                    Qualquer conta cadastrada ou editada abaixo será salva instantaneamente com segurança no banco de dados local deste navegador. No entanto, ela <strong>não poderá ser sincronizada em outros dispositivos</strong> até que a conexão com a nuvem seja restabelecida ou o limite diário de gravação da nuvem seja reiniciado.
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Card 1: Account Creation Form */}
               <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
                 {editingAcc ? (
@@ -1904,6 +1924,7 @@ export default function App() {
                 </div>
               </div>
             </div>
+          </div>
           )}
         </main>
       </div>
