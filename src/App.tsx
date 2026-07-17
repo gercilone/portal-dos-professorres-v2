@@ -259,10 +259,20 @@ export default function App() {
     // Clear IndexedDB local database tables on logout
     try {
       const tables = [
-        'schools', 'classes', 'subjects', 'students', 'subjectWorkloads',
-        'lessons', 'attendances', 'vistos', 'evaluations', 'grades',
-        'positivesNegatives', 'gamificationPoints', 'gamificationHistory',
-        'gamificationStore', 'gamificationInventory'
+        'schools',
+        'classes',
+        'subjects',
+        'students',
+        'subjectWorkloads',
+        'weeklySchedule',
+        'bimonthlyGrades',
+        'assignmentDescriptions',
+        'lessons',
+        'attendance',
+        'vistoColumns',
+        'studentVistos',
+        'vistoRankingScores',
+        'extraGrades'
       ];
       for (const tableName of tables) {
         if ((db as any)[tableName]) {
@@ -365,10 +375,20 @@ export default function App() {
         try {
           // Clear all local tables to avoid merging with other teachers' cached records
           const tables = [
-            'schools', 'classes', 'subjects', 'students', 'subjectWorkloads',
-            'lessons', 'attendances', 'vistos', 'evaluations', 'grades',
-            'positivesNegatives', 'gamificationPoints', 'gamificationHistory',
-            'gamificationStore', 'gamificationInventory'
+            'schools',
+            'classes',
+            'subjects',
+            'students',
+            'subjectWorkloads',
+            'weeklySchedule',
+            'bimonthlyGrades',
+            'assignmentDescriptions',
+            'lessons',
+            'attendance',
+            'vistoColumns',
+            'studentVistos',
+            'vistoRankingScores',
+            'extraGrades'
           ];
           for (const tableName of tables) {
             if ((db as any)[tableName]) {

@@ -897,6 +897,16 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
   const handleExportBackup = async () => {
     try {
       const data = {
+        type: 'full_portal_backup_v2',
+        meta: {
+          activeUser: localStorage.getItem('portal_active_user'),
+          activeUserDb: localStorage.getItem('portal_active_user_db'),
+          teacherName: localStorage.getItem('portal_teacher_name'),
+          username: localStorage.getItem('portal_username'),
+          authEnabled: localStorage.getItem('portal_auth_enabled'),
+          professorsList: localStorage.getItem('portal_professors_list'),
+          coordinatorsList: localStorage.getItem('portal_coordinators_list'),
+        },
         schools: await db.schools.toArray(),
         classes: await db.classes.toArray(),
         subjects: await db.subjects.toArray(),
@@ -1362,6 +1372,72 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
             setCloudSyncDisabled(true);
 
             try {
+              // Restore session and user metadata from backup if available (Device Migration support)
+              if (data.meta) {
+                if (data.meta.professorsList) {
+                  try {
+                    const backupProfs = JSON.parse(data.meta.professorsList);
+                    const currentProfsStr = localStorage.getItem('portal_professors_list');
+                    let mergedProfs = backupProfs;
+                    if (currentProfsStr) {
+                      const currentProfs = JSON.parse(currentProfsStr);
+                      const map = new Map();
+                      currentProfs.forEach((p: any) => {
+                        if (p && p.username) map.set(p.username.toLowerCase(), p);
+                      });
+                      backupProfs.forEach((p: any) => {
+                        if (p && p.username) map.set(p.username.toLowerCase(), p);
+                      });
+                      mergedProfs = Array.from(map.values());
+                    }
+                    localStorage.setItem('portal_professors_list', JSON.stringify(mergedProfs));
+                  } catch (e) {
+                    console.error('Error merging professors list:', e);
+                  }
+                }
+
+                if (data.meta.coordinatorsList) {
+                  try {
+                    const backupCoords = JSON.parse(data.meta.coordinatorsList);
+                    const currentCoordsStr = localStorage.getItem('portal_coordinators_list');
+                    let mergedCoords = backupCoords;
+                    if (currentCoordsStr) {
+                      const currentCoords = JSON.parse(currentCoordsStr);
+                      const map = new Map();
+                      currentCoords.forEach((c: any) => {
+                        if (c && c.username) map.set(c.username.toLowerCase(), c);
+                      });
+                      backupCoords.forEach((c: any) => {
+                        if (c && c.username) map.set(c.username.toLowerCase(), c);
+                      });
+                      mergedCoords = Array.from(map.values());
+                    }
+                    localStorage.setItem('portal_coordinators_list', JSON.stringify(mergedCoords));
+                  } catch (e) {
+                    console.error('Error merging coordinators list:', e);
+                  }
+                }
+
+                if (data.meta.activeUser) {
+                  localStorage.setItem('portal_active_user', data.meta.activeUser);
+                }
+                if (data.meta.activeUserDb) {
+                  localStorage.setItem('portal_active_user_db', data.meta.activeUserDb);
+                }
+                if (data.meta.teacherName) {
+                  localStorage.setItem('portal_teacher_name', data.meta.teacherName);
+                }
+                if (data.meta.username) {
+                  localStorage.setItem('portal_username', data.meta.username);
+                }
+                if (data.meta.authEnabled) {
+                  localStorage.setItem('portal_auth_enabled', data.meta.authEnabled);
+                }
+                
+                // Let the UI system know storage has changed
+                window.dispatchEvent(new Event('storage'));
+              }
+
               // 1. NORMALIZE AND MIGRATE DATA STRUCTURES (older backups compatibility)
               
               // Normalize bimonth -> bimonthly for bimonthlyGrades
@@ -1958,7 +2034,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
               </form>
 
               {/* Schools List */}
-              <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+              <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
                 {schools.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-2">Nenhuma escola cadastrada.</p>
                 ) : (
@@ -2060,83 +2136,197 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                 </button>
               </form>
 
-              {/* Classes List */}
-              <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+              {/* Classes List grouped by School */}
+              <div className="space-y-4 bg-zinc-950/40 p-3 rounded-xl border border-zinc-800">
                 {classes.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-2">Nenhuma turma cadastrada.</p>
                 ) : (
-                  [...classes].sort(sortClasses).map((cls) => {
-                    const sch = schools.find((s) => s.id === cls.schoolId);
+                  (() => {
+                    const schoolGroups = schools.map(sch => {
+                      const schoolClasses = classes.filter(c => c.schoolId === sch.id).sort(sortClasses);
+                      return { school: sch, classes: schoolClasses };
+                    });
+
+                    const unassociatedClasses = classes.filter(c => !c.schoolId || !schools.some(s => s.id === c.schoolId)).sort(sortClasses);
+
                     return (
-                      <div key={cls.id} className="flex items-center justify-between py-1.5 text-xs text-zinc-300 gap-2">
-                        {editingClassId === cls.id ? (
-                          <div className="flex flex-col gap-1 w-full p-1 bg-zinc-900/50 rounded-lg">
-                            <input
-                              type="text"
-                              value={editingClassName}
-                              onChange={(e) => setEditingClassName(e.target.value)}
-                              className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-[11px] rounded px-2 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="Nome da Turma"
-                            />
-                            <div className="flex items-center gap-1.5">
-                              <select
-                                value={editingClassSchoolId || ''}
-                                onChange={(e) => setEditingClassSchoolId(e.target.value ? parseInt(e.target.value) : undefined)}
-                                className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] rounded px-1.5 py-0.5 w-full focus:outline-none cursor-pointer"
-                              >
-                                <option value="">Escola Associada</option>
-                                {schools.map((s) => (
-                                  <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={handleSaveEditClass}
-                                className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer shrink-0"
-                                title="Salvar"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingClassId(undefined)}
-                                className="text-zinc-400 hover:text-zinc-300 p-1 cursor-pointer shrink-0"
-                                title="Cancelar"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                      <div className="space-y-4">
+                        {schoolGroups.map(({ school, classes: schoolClasses }) => {
+                          const schoolColors = getSchoolColorClasses(school.id);
+                          return (
+                            <div key={school.id} className="space-y-1.5 pb-2">
+                              {/* School Group Header */}
+                              <div className="flex items-center justify-between border-b border-zinc-800 pb-1 pt-1">
+                                <span className={`text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5 ${schoolColors.text}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${schoolColors.accentColor}`} />
+                                  {school.name}
+                                </span>
+                                <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+                                  {schoolClasses.length} {schoolClasses.length === 1 ? 'turma' : 'turmas'}
+                                </span>
+                              </div>
+
+                              {/* School Group Classes */}
+                              {schoolClasses.length === 0 ? (
+                                <p className="text-[10px] text-zinc-600 italic pl-3 py-1">Nenhuma turma cadastrada para esta escola.</p>
+                              ) : (
+                                <div className="divide-y divide-zinc-900/60 pl-2">
+                                  {schoolClasses.map((cls) => (
+                                    <div key={cls.id} className="flex items-center justify-between py-1.5 text-xs text-zinc-300 gap-2">
+                                      {editingClassId === cls.id ? (
+                                        <div className="flex flex-col gap-1 w-full p-1 bg-zinc-900/50 rounded-lg">
+                                          <input
+                                            type="text"
+                                            value={editingClassName}
+                                            onChange={(e) => setEditingClassName(e.target.value)}
+                                            className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-[11px] rounded px-2 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                            placeholder="Nome da Turma"
+                                          />
+                                          <div className="flex items-center gap-1.5">
+                                            <select
+                                              value={editingClassSchoolId || ''}
+                                              onChange={(e) => setEditingClassSchoolId(e.target.value ? parseInt(e.target.value) : undefined)}
+                                              className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] rounded px-1.5 py-0.5 w-full focus:outline-none cursor-pointer"
+                                            >
+                                              <option value="">Escola Associada</option>
+                                              {schools.map((s) => (
+                                                <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>
+                                              ))}
+                                            </select>
+                                            <button
+                                              type="button"
+                                              onClick={handleSaveEditClass}
+                                              className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer shrink-0"
+                                              title="Salvar"
+                                            >
+                                              <Check className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setEditingClassId(undefined)}
+                                              className="text-zinc-400 hover:text-zinc-300 p-1 cursor-pointer shrink-0"
+                                              title="Cancelar"
+                                            >
+                                              <X className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <span className="font-medium text-zinc-200">{cls.name}</span>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleStartEditClass(cls)}
+                                              className="text-zinc-500 hover:text-blue-400 p-1 cursor-pointer"
+                                              title="Editar"
+                                            >
+                                              <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              id={`delete-class-btn-${cls.id}`}
+                                              type="button"
+                                              onClick={() => handleDeleteClass(cls.id!)}
+                                              className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
+                                              title="Excluir"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {unassociatedClasses.length > 0 && (
+                          <div className="space-y-1.5 pb-2">
+                            <div className="flex items-center justify-between border-b border-zinc-800 pb-1 pt-1 text-zinc-500">
+                              <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                                Sem Escola Associada
+                              </span>
+                              <span className="bg-zinc-900 border border-zinc-800 text-zinc-400 text-[9px] font-bold px-1.5 py-0.2 rounded-full">
+                                {unassociatedClasses.length}
+                              </span>
+                            </div>
+                            <div className="divide-y divide-zinc-900/60 pl-2">
+                              {unassociatedClasses.map((cls) => (
+                                <div key={cls.id} className="flex items-center justify-between py-1.5 text-xs text-zinc-300 gap-2">
+                                  {editingClassId === cls.id ? (
+                                    <div className="flex flex-col gap-1 w-full p-1 bg-zinc-900/50 rounded-lg">
+                                      <input
+                                        type="text"
+                                        value={editingClassName}
+                                        onChange={(e) => setEditingClassName(e.target.value)}
+                                        className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-[11px] rounded px-2 py-0.5 w-full focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                        placeholder="Nome da Turma"
+                                      />
+                                      <div className="flex items-center gap-1.5">
+                                        <select
+                                          value={editingClassSchoolId || ''}
+                                          onChange={(e) => setEditingClassSchoolId(e.target.value ? parseInt(e.target.value) : undefined)}
+                                          className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-[10px] rounded px-1.5 py-0.5 w-full focus:outline-none cursor-pointer"
+                                        >
+                                          <option value="">Escola Associada</option>
+                                          {schools.map((s) => (
+                                            <option key={s.id} value={s.id} className="bg-zinc-950">{s.name}</option>
+                                          ))}
+                                        </select>
+                                        <button
+                                          type="button"
+                                          onClick={handleSaveEditClass}
+                                          className="text-emerald-400 hover:text-emerald-300 p-1 cursor-pointer shrink-0"
+                                          title="Salvar"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingClassId(undefined)}
+                                          className="text-zinc-400 hover:text-zinc-300 p-1 cursor-pointer shrink-0"
+                                          title="Cancelar"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span className="font-medium text-zinc-200">{cls.name}</span>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleStartEditClass(cls)}
+                                          className="text-zinc-500 hover:text-blue-400 p-1 cursor-pointer"
+                                          title="Editar"
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          id={`delete-class-btn-${cls.id}`}
+                                          type="button"
+                                          onClick={() => handleDeleteClass(cls.id!)}
+                                          className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
+                                          title="Excluir"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           </div>
-                        ) : (
-                          <>
-                            <div>
-                              <span className="font-medium">{cls.name}</span>
-                              <span className="text-[10px] text-zinc-500 block">Escola: {sch?.name || '-'}</span>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleStartEditClass(cls)}
-                                className="text-zinc-500 hover:text-blue-400 p-1 cursor-pointer"
-                                title="Editar"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                id={`delete-class-btn-${cls.id}`}
-                                type="button"
-                                onClick={() => handleDeleteClass(cls.id!)}
-                                className="text-zinc-500 hover:text-rose-400 p-1 cursor-pointer"
-                                title="Excluir"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </>
                         )}
                       </div>
                     );
-                  })
+                  })()
                 )}
               </div>
             </div>
@@ -2173,7 +2363,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
               {/* Subjects List (Read-Only) */}
               <div className="space-y-1">
                 <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-2">Sua Grade de Disciplinas ({subjects.length})</p>
-                <div className="max-h-48 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+                <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
                   {subjects.length === 0 ? (
                     <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma disciplina importada ainda. Clique em Sincronizar acima.</p>
                   ) : (
@@ -2310,7 +2500,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   {/* Students list */}
                   <div className="space-y-2">
                     <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Lista de Chamada ({studentsFiltered.length} alunos)</p>
-                    <div className="max-h-80 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+                    <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
                       {studentsFiltered.length === 0 ? (
                         <p className="text-xs text-zinc-500 text-center py-4">Nenhum aluno nesta sala.</p>
                       ) : (
@@ -2428,7 +2618,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
             {/* List current workloads (Read-Only) */}
             <div className="space-y-2">
               <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({workloads.length})</p>
-              <div className="max-h-64 overflow-y-auto divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
+              <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
                 {workloads.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma carga horária registrada ainda. Clique em Sincronizar acima.</p>
                 ) : (
