@@ -68,6 +68,19 @@ export interface ProfessorAccount {
   authEnabled: boolean;
 }
 
+// Timeout utility to ensure network calls do not block forever in sandboxed/offline-prone environments
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Timeout reached'));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
+
 // 1. PROFESSORS PROFILES SYNC (Cloud Database Shared Registry)
 export async function syncProfessorsListInCloud() {
   const dbInstance = getFirestoreInstance();
@@ -77,9 +90,9 @@ export async function syncProfessorsListInCloud() {
   }
 
   try {
-    // A. Pull latest professors list from cloud
+    // A. Pull latest professors list from cloud with a 4-second timeout
     const professorsCol = collection(dbInstance, 'professors');
-    const snapshot = await getDocs(professorsCol);
+    const snapshot = await withTimeout(getDocs(professorsCol), 4000);
     const cloudList: ProfessorAccount[] = [];
     
     snapshot.forEach((doc) => {
@@ -170,18 +183,29 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   try {
     const userLower = username.toLowerCase();
     
-    for (const tableName of TABLES_TO_SYNC) {
-      const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-      const snapshot = await getDocs(colRef);
-      
-      const records: any[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        const id = isNaN(Number(doc.id)) ? doc.id : Number(doc.id);
-        records.push({ ...data, id });
-      });
+    // Fetch all tables in parallel to make it extremely fast, wrapped in a 5-second timeout!
+    const fetchAllPromise = Promise.all(
+      TABLES_TO_SYNC.map(async (tableName) => {
+        try {
+          const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
+          const snapshot = await getDocs(colRef);
+          const records: any[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            const id = isNaN(Number(doc.id)) ? doc.id : Number(doc.id);
+            records.push({ ...data, id });
+          });
+          return { tableName, records };
+        } catch (err) {
+          console.warn(`Could not pull table ${tableName}:`, err);
+          return { tableName, records: [] };
+        }
+      })
+    );
 
-      // Clear local table and write cloud records
+    const results = await withTimeout(fetchAllPromise, 5000);
+
+    for (const { tableName, records } of results) {
       if (dexieDb[tableName]) {
         await dexieDb[tableName].clear();
         if (records.length > 0) {
@@ -291,7 +315,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
 
   try {
     const coordsCol = collection(dbInstance, 'coordinators');
-    const snapshot = await getDocs(coordsCol);
+    const snapshot = await withTimeout(getDocs(coordsCol), 4000);
     const cloudList: CoordinatorAccount[] = [];
     
     snapshot.forEach((doc) => {
@@ -606,3 +630,47 @@ export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
     console.error('Error deleting global workload:', error);
   }
 }
+
+// 6. AD-HOC SYSTEM BACKUP FETCHERS
+export async function getGradesBackup(professors: { username: string; teacherName: string }[]): Promise<any[]> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return [];
+
+  const allGrades: any[] = [];
+  
+  for (const prof of professors) {
+    try {
+      const userLower = prof.username.toLowerCase();
+      // Fetch bimonthly grades
+      const bimonthlyRef = collection(dbInstance, `diaries/${userLower}/bimonthlyGrades`);
+      const bimonthlySnapshot = await getDocs(bimonthlyRef);
+      bimonthlySnapshot.forEach((doc) => {
+        allGrades.push({
+          professor: prof.username,
+          professorName: prof.teacherName,
+          type: 'bimonthly',
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+
+      // Fetch extra grades
+      const extraRef = collection(dbInstance, `diaries/${userLower}/extraGrades`);
+      const extraSnapshot = await getDocs(extraRef);
+      extraSnapshot.forEach((doc) => {
+        allGrades.push({
+          professor: prof.username,
+          professorName: prof.teacherName,
+          type: 'extra',
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+    } catch (err) {
+      console.error(`Error fetching grades backup for ${prof.username}:`, err);
+    }
+  }
+
+  return allGrades;
+}
+

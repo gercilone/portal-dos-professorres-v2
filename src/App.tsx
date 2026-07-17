@@ -10,8 +10,9 @@ import TabEReports from './components/TabE_Reports';
 import TabFSettings from './components/TabF_Settings';
 import CoordGlobalClasses from './components/CoordGlobalClasses';
 import CoordGlobalSubjects from './components/CoordGlobalSubjects';
+import CoordBackups from './components/CoordBackups';
 import { sortClasses } from './types';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   deleteProfessorFromCloud,
@@ -133,7 +134,7 @@ export default function App() {
   });
 
   // Coordinator dashboard states
-  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects'>('inspect');
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects' | 'backups'>('inspect');
   const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Coordinator Account creation form
@@ -1438,6 +1439,14 @@ export default function App() {
             >
               <BookOpen className="w-4 h-4" /> Disciplinas & Cargas Globais
             </button>
+            <button
+              onClick={() => setCoordActiveTab('backups')}
+              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                coordActiveTab === 'backups' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              }`}
+            >
+              <Archive className="w-4 h-4" /> Backups do Sistema
+            </button>
           </div>
         </div>
 
@@ -1449,6 +1458,10 @@ export default function App() {
 
           {coordActiveTab === 'global-subjects' && (
             <CoordGlobalSubjects />
+          )}
+
+          {coordActiveTab === 'backups' && (
+            <CoordBackups />
           )}
 
           {coordActiveTab === 'inspect' && (
