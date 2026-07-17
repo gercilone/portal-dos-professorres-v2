@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { School, Class, Subject, sortClasses } from '../types';
-import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut } from 'lucide-react';
+import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon } from 'lucide-react';
 
 interface HeaderFiltersProps {
   selectedSchoolId: number | undefined;
@@ -15,6 +15,8 @@ interface HeaderFiltersProps {
   teacherName: string;
   isAuthEnabled: boolean;
   onLogout: () => void;
+  theme?: 'light' | 'dark';
+  setTheme?: (t: 'light' | 'dark') => void;
 }
 
 export default function HeaderFilters({
@@ -29,6 +31,8 @@ export default function HeaderFilters({
   teacherName,
   isAuthEnabled,
   onLogout,
+  theme = 'dark',
+  setTheme,
 }: HeaderFiltersProps) {
   const schools = useLiveQuery(() => db.schools.toArray()) || [];
   const classes = useLiveQuery(async () => {
@@ -91,7 +95,7 @@ export default function HeaderFilters({
     };
   };
 
-  const theme = getSchoolColors(selectedSchoolId);
+  const schoolTheme = getSchoolColors(selectedSchoolId);
 
   return (
     <div id="header-filters-container" className="bg-[#09090b] border-b border-zinc-800 p-4 relative z-30 shadow-md">
@@ -115,17 +119,30 @@ export default function HeaderFilters({
             </div>
           </div>
 
-          {onLogout && (
-            <button
-              id="header-logout-btn"
-              onClick={onLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-rose-400 rounded-xl text-xs font-semibold transition cursor-pointer select-none"
-              title="Sair do aplicativo"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sair</span>
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {setTheme && (
+              <button
+                type="button"
+                onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                className="flex items-center justify-center p-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-amber-400 rounded-xl transition cursor-pointer select-none"
+                title={theme === 'light' ? 'Mudar para Tema Escuro' : 'Mudar para Tema Claro'}
+              >
+                {theme === 'light' ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-yellow-400" />}
+              </button>
+            )}
+
+            {onLogout && (
+              <button
+                id="header-logout-btn"
+                onClick={onLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-400 hover:text-rose-400 rounded-xl text-xs font-semibold transition cursor-pointer select-none"
+                title="Sair do aplicativo"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Sair</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Dashboard-Style Button Control Panel */}
@@ -176,7 +193,7 @@ export default function HeaderFilters({
                       onClick={() => setSelectedClassId(c.id)}
                       className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none ${
                         isSelected 
-                          ? theme.bgActive
+                          ? schoolTheme.bgActive
                           : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:text-zinc-250 hover:bg-zinc-800/60'
                       }`}
                     >
@@ -205,7 +222,7 @@ export default function HeaderFilters({
                       onClick={() => setSelectedSubjectId(sub.id)}
                       className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none ${
                         isSelected 
-                          ? theme.bgActive
+                          ? schoolTheme.bgActive
                           : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:text-zinc-250 hover:bg-zinc-800/60'
                       }`}
                     >
@@ -231,7 +248,7 @@ export default function HeaderFilters({
                     onClick={() => setSelectedBimonthly(bimNum)}
                     className={`px-3 py-2 rounded-xl text-xs font-bold border text-center transition-all cursor-pointer select-none ${
                       isSelected 
-                        ? theme.bgActive
+                        ? schoolTheme.bgActive
                         : 'bg-zinc-900/50 border-zinc-800 text-zinc-400 hover:text-zinc-250 hover:bg-zinc-800/60'
                     }`}
                   >

@@ -31,3 +31,147 @@
     display: none;
   }
 }
+
+/* Light theme overrides */
+html.light-theme,
+.light-theme {
+  color-scheme: light;
+}
+
+/* Base body backgrounds and texts */
+.light-theme,
+.light-theme body,
+.light-theme #portal-lockscreen-root,
+.light-theme #portal-app-root,
+.light-theme #header-filters-container,
+.light-theme main {
+  background-color: #f8fafc !important; /* light slate/zinc bg */
+  color: #0f172a !important; /* slate-900 text */
+}
+
+/* Light theme borders */
+.light-theme *,
+.light-theme .border-zinc-800,
+.light-theme .border-zinc-800\/60,
+.light-theme .border-zinc-850\/40,
+.light-theme .border-zinc-700,
+.light-theme .border-zinc-700\/80,
+.light-theme .border-zinc-850 {
+  border-color: #e2e8f0 !important; /* slate-200 */
+}
+
+/* Light theme card backgrounds */
+.light-theme .bg-zinc-900,
+.light-theme .bg-zinc-900\/60,
+.light-theme .bg-zinc-900\/35,
+.light-theme .bg-zinc-900\/50,
+.light-theme .bg-zinc-950,
+.light-theme .bg-zinc-950\/40,
+.light-theme .bg-zinc-950\/50,
+.light-theme .bg-zinc-950\/60,
+.light-theme nav#app-main-tabs-nav {
+  background-color: #ffffff !important; /* pure white cards */
+}
+
+/* Secondary list items / inner content wrappers */
+.light-theme .bg-zinc-900\/35,
+.light-theme .bg-zinc-950\/40,
+.light-theme .bg-zinc-950\/50 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+/* Neutral subtle buttons/badges */
+.light-theme .bg-zinc-900,
+.light-theme .bg-zinc-850,
+.light-theme .bg-zinc-800,
+.light-theme .bg-zinc-750 {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  color: #334155 !important; /* slate-700 */
+}
+
+/* Primary texts */
+.light-theme h1,
+.light-theme h2,
+.light-theme h3,
+.light-theme h4,
+.light-theme .text-white,
+.light-theme .text-zinc-100,
+.light-theme .text-zinc-150,
+.light-theme .text-zinc-200,
+.light-theme .text-zinc-300 {
+  color: #0f172a !important; /* slate-900 */
+}
+
+/* Secondary/mute texts */
+.light-theme p,
+.light-theme span,
+.light-theme .text-zinc-400,
+.light-theme .text-zinc-500 {
+  color: #475569 !important; /* slate-600 */
+}
+
+/* Inputs, Selects, and Textareas */
+.light-theme input,
+.light-theme select,
+.light-theme textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important; /* slate-300 */
+}
+
+.light-theme input::placeholder,
+.light-theme textarea::placeholder {
+  color: #94a3b8 !important; /* slate-400 */
+}
+
+/* Table overrides to look extremely crisp and light */
+.light-theme table {
+  background-color: #ffffff !important;
+}
+
+.light-theme thead th,
+.light-theme th {
+  background-color: #f1f5f9 !important; /* slate-100 */
+  color: #1e293b !important; /* slate-800 */
+}
+
+.light-theme tbody tr:nth-child(even) {
+  background-color: #f8fafc !important; /* slate-50 */
+}
+
+.light-theme tbody tr:hover {
+  background-color: #f1f5f9 !important; /* slate-100 */
+}
+
+/* Specific elements like active navigation tabs */
+.light-theme nav#app-main-tabs-nav button {
+  color: #475569 !important;
+}
+
+.light-theme nav#app-main-tabs-nav button[id^="main-tab-"] {
+  background-color: transparent !important;
+}
+
+.light-theme nav#app-main-tabs-nav button[id^="main-tab-"][class*="bg-zinc-800"] {
+  background-color: #e2e8f0 !important; /* slate-200 active */
+  color: #0f172a !important;
+}
+
+.light-theme button:hover {
+  filter: brightness(0.95);
+}
+
+/* Interactive elements / scrollbar in light mode */
+.light-theme ::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.4);
+}
+
+.light-theme ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+/* Modal overlay backgrounds */
+.light-theme .bg-black\/60,
+.light-theme .bg-zinc-950\/80 {
+  background-color: rgba(15, 23, 42, 0.5) !important; /* soft dark overlay */
+}

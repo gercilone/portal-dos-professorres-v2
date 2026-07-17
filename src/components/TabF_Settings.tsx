@@ -2,7 +2,7 @@ import { useState, FormEvent, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
-import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads } from '../firebase';
 
 export function getSchoolColorClasses(schoolId: number | undefined) {
@@ -103,9 +103,18 @@ interface TabFSettingsProps {
   setTeacherName: (name: string) => void;
   onSecuritySaved?: () => void;
   isReadOnly?: boolean;
+  theme?: 'light' | 'dark';
+  setTheme?: (theme: 'light' | 'dark') => void;
 }
 
-export default function TabFSettings({ teacherName, setTeacherName, onSecuritySaved, isReadOnly = false }: TabFSettingsProps) {
+export default function TabFSettings({
+  teacherName,
+  setTeacherName,
+  onSecuritySaved,
+  isReadOnly = false,
+  theme = 'dark',
+  setTheme
+}: TabFSettingsProps) {
   const [activeSubTab, setActiveSubTab] = useState<'perfil' | 'cadastros' | 'grade' | 'backup' | 'turmas-globais'>('perfil');
 
   // PROFILE & SECURITY STATES
@@ -1679,6 +1688,65 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     });
   };
 
+  const handleResetDatabase = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '⚠️ ZERAR BANCO DE DADOS LOCAL',
+      message: 'ATENÇÃO: Esta ação apagará permanentemente todas as suas escolas, turmas, alunos, notas, frequências e vistos salvos neste dispositivo. Seus dados na nuvem NÃO serão alterados automaticamente por segurança. Deseja realmente continuar e apagar tudo?',
+      confirmText: 'Sim, Apagar Tudo',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        try {
+          setConfirmDialog(null);
+          
+          // Clear all dexie tables
+          const tables = [
+            'schools',
+            'classes',
+            'subjects',
+            'students',
+            'subjectWorkloads',
+            'weeklySchedule',
+            'bimonthlyGrades',
+            'assignmentDescriptions',
+            'lessons',
+            'attendance',
+            'vistoColumns',
+            'studentVistos',
+            'vistoRankingScores',
+            'extraGrades'
+          ];
+          
+          for (const table of tables) {
+            if (db[table]) {
+              await db[table].clear();
+            }
+          }
+
+          // Reset teacher profile name to default
+          localStorage.removeItem('portal_teacher_name');
+          localStorage.setItem('portal_skip_seed', 'true');
+          
+          setAlertDialog({
+            isOpen: true,
+            title: 'Dados Zerados',
+            message: 'O banco de dados local foi limpo com sucesso! O aplicativo será reiniciado para criar uma nova conta ou baixar os dados da nuvem.',
+            onClose: () => {
+              window.location.reload();
+            }
+          });
+        } catch (err) {
+          console.error('Erro ao limpar banco de dados:', err);
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro',
+            message: 'Ocorreu um erro ao limpar o banco de dados. Tente novamente.'
+          });
+        }
+      }
+    });
+  };
+
   const handleSaveSecurity = (e: FormEvent) => {
     e.preventDefault();
     if (!portalUsername.trim()) {
@@ -1833,7 +1901,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
 
       {/* Perfil & Segurança Sub-Tab */}
       {activeSubTab === 'perfil' && (
-        <div id="settings-perfil-section" className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-150">
+        <div id="settings-perfil-section" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-150">
           
           {/* Card 1: Perfil do Professor */}
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
@@ -1996,6 +2064,71 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                 <Save className="w-4 h-4 text-amber-400" /> Salvar Configurações de Segurança
               </button>
             </form>
+          </div>
+
+          {/* Card 3: Aparência e Banco de Dados */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 pb-2 border-b border-zinc-800 mb-4">
+                <Database className="w-5 h-5 text-rose-400" />
+                <div>
+                  <h3 className="text-white font-bold text-sm">Aparência & Sistema</h3>
+                  <p className="text-[11px] text-zinc-500">Ajuste o visual ou zere os dados locais</p>
+                </div>
+              </div>
+
+              {/* THEME SELECTION SECTION */}
+              <div className="space-y-2.5">
+                <span className="text-xs font-semibold text-zinc-400 block">Tema do Aplicativo</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTheme && setTheme('light')}
+                    className={`py-3 px-4 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-2 cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-zinc-100 text-zinc-900 border-zinc-300 shadow-md shadow-zinc-200/50 font-extrabold'
+                        : 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-950'
+                    }`}
+                  >
+                    <Sun className="w-4 h-4 text-amber-500 shrink-0" />
+                    Claro
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTheme && setTheme('dark')}
+                    className={`py-3 px-4 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-2 cursor-pointer ${
+                      theme === 'dark'
+                        ? 'bg-zinc-850 text-white border-zinc-700 shadow-md font-extrabold'
+                        : 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-950'
+                    }`}
+                  >
+                    <Moon className="w-4 h-4 text-indigo-400 shrink-0" />
+                    Escuro
+                  </button>
+                </div>
+              </div>
+
+              {/* RESET DATABASE SECTION */}
+              <div className="space-y-2.5 pt-4 border-t border-zinc-800/60 mt-4">
+                <div className="space-y-1">
+                  <span className="text-xs font-bold text-rose-400 block flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5" /> Zerar Banco de Dados
+                  </span>
+                  <p className="text-[10px] text-zinc-500 leading-relaxed">
+                    Apaga todas as escolas, turmas, alunos, notas e chamadas deste dispositivo. Seus backups na nuvem não serão alterados automaticamente.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              id="reset-local-database-btn"
+              type="button"
+              onClick={handleResetDatabase}
+              className="w-full py-2.5 bg-rose-500/10 hover:bg-rose-600 hover:text-white border border-rose-500/20 text-rose-400 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer mt-4"
+            >
+              <Trash2 className="w-4 h-4 shrink-0" /> Zerar Todos os Dados Locais
+            </button>
           </div>
 
         </div>

@@ -103,6 +103,20 @@ export default function App() {
   const [selectedBimonthly, setSelectedBimonthly] = useState<number>(1);
   const [activeTab, setActiveTab] = useState<TabKey>('attendance');
 
+  // THEME STATE
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('portal_theme') as 'light' | 'dark') || 'dark';
+  });
+
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
+    }
+    localStorage.setItem('portal_theme', theme);
+  }, [theme]);
+
   // ROLE & COORD STATES
   const [userRole, setUserRole] = useState<'teacher' | 'coordinator'>(() => {
     return (localStorage.getItem('portal_user_role') as 'teacher' | 'coordinator') || 'teacher';
@@ -1054,7 +1068,16 @@ export default function App() {
           />
         );
       case 'settings':
-        return <TabFSettings teacherName={teacherName} setTeacherName={setTeacherName} onSecuritySaved={handleSecuritySaved} isReadOnly={isInspectingMode} />;
+        return (
+          <TabFSettings
+            teacherName={teacherName}
+            setTeacherName={setTeacherName}
+            onSecuritySaved={handleSecuritySaved}
+            isReadOnly={isInspectingMode}
+            theme={theme}
+            setTheme={setTheme}
+          />
+        );
       default:
         return null;
     }
@@ -1923,6 +1946,8 @@ export default function App() {
         teacherName={teacherName}
         isAuthEnabled={isAuthEnabled}
         onLogout={handleLogout}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Main Tabs Navigation Bar */}

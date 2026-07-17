@@ -119,6 +119,9 @@ export const db = new Proxy({}, {
 
 // Seed function to initialize dummy data if db is empty
 export async function seedDatabase() {
+  if (localStorage.getItem('portal_skip_seed') === 'true') {
+    return;
+  }
   const schoolCount = await db.schools.count();
   if (schoolCount > 0) return;
 
