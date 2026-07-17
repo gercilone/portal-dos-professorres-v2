@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getFirestore,
+  initializeFirestore,
   collection,
   doc,
   getDocs,
@@ -48,7 +49,17 @@ export function getFirestoreInstance() {
       return null;
     }
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+    
+    // Use initializeFirestore with experimentalForceLongPolling for robust connections inside iframes and sandboxes
+    try {
+      firestoreInstance = initializeFirestore(app, {
+        experimentalForceLongPolling: true
+      }, firebaseConfig.firestoreDatabaseId || '(default)');
+    } catch (e) {
+      // Fallback to standard getFirestore if initializeFirestore fails
+      firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+    }
+    
     return firestoreInstance;
   } catch (error) {
     console.error('Failed to initialize Firebase / Firestore:', error);
@@ -69,8 +80,8 @@ export interface ProfessorAccount {
 }
 
 // Timeout utility to ensure network calls do not block forever in sandboxed/offline-prone environments
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 20000): Promise<T> {
-  const actualTimeout = Math.max(timeoutMs, 20000); // Ensure at least 20 seconds for slow networks
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T> {
+  const actualTimeout = Math.max(timeoutMs, 6000); // Snappy feedback threshold: at least 6 seconds, but no long freezes
   let timeoutId: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -123,12 +134,15 @@ export async function syncProfessorsListInCloud() {
         localList = [defaultProf];
       }
 
+      // Seed all professors atomically using writeBatch to avoid slow sequential setDoc calls
+      const batch = writeBatch(dbInstance);
       for (const prof of localList) {
         const usernameLower = prof.username.toLowerCase();
         const cleanedProf = cleanDataForFirestore(prof);
-        await withTimeout(setDoc(doc(dbInstance, 'professors', usernameLower), cleanedProf), 4000);
+        batch.set(doc(dbInstance, 'professors', usernameLower), cleanedProf);
         cloudList.push(prof);
       }
+      await withTimeout(batch.commit(), 6000);
     }
 
     // Trust cloudList as the absolute source of truth
@@ -631,6 +645,22 @@ export async function saveGlobalWorkload(workload: GlobalWorkload): Promise<void
     await withTimeout(setDoc(docRef, cleanDataForFirestore(workload)), 4000);
   } catch (error) {
     console.error('Error saving global workload:', error);
+    throw error;
+  }
+}
+
+export async function saveGlobalWorkloadsBatch(workloadsList: GlobalWorkload[]): Promise<void> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const batch = writeBatch(dbInstance);
+    for (const wl of workloadsList) {
+      const docRef = doc(dbInstance, 'global_workloads', wl.id);
+      batch.set(docRef, cleanDataForFirestore(wl));
+    }
+    await withTimeout(batch.commit(), 6000);
+  } catch (error) {
+    console.error('Error saving global workloads batch:', error);
     throw error;
   }
 }

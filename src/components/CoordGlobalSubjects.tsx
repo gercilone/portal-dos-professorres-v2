@@ -11,6 +11,7 @@ import {
   deleteGlobalSubject,
   getGlobalWorkloads,
   saveGlobalWorkload,
+  saveGlobalWorkloadsBatch,
   deleteGlobalWorkload,
   syncProfessorsListInCloud,
   ProfessorAccount
@@ -199,7 +200,7 @@ export default function CoordGlobalSubjects() {
     setIsLoading(true);
     try {
       const updatedWorkloadsList = [...workloads];
-      const savePromises: Promise<any>[] = [];
+      const workloadsToSave: GlobalWorkload[] = [];
 
       for (const classId of selectedClassIds) {
         // Find if workload already exists for this class and subject
@@ -214,7 +215,7 @@ export default function CoordGlobalSubjects() {
           teacherUsername: selectedTeacherUsername || ''
         };
 
-        savePromises.push(saveGlobalWorkload(newWl));
+        workloadsToSave.push(newWl);
 
         if (existingIndex !== -1) {
           updatedWorkloadsList[existingIndex] = newWl;
@@ -223,7 +224,7 @@ export default function CoordGlobalSubjects() {
         }
       }
 
-      await Promise.all(savePromises);
+      await saveGlobalWorkloadsBatch(workloadsToSave);
 
       setWorkloads(updatedWorkloadsList);
       setSelectedClassIds([]); // Reset selected classes
