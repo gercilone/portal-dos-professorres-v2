@@ -831,13 +831,14 @@ export default function TabFSettings({
   };
 
   // CLOUD BACKUP PUSH/PULL
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
+  const [isPushingCloud, setIsPushingCloud] = useState(false);
+  const [isPullingCloud, setIsPullingCloud] = useState(false);
 
   const handleCloudPush = async () => {
     const activeUser = localStorage.getItem('portal_active_user');
     if (!activeUser) return;
 
-    setIsSyncingCloud(true);
+    setIsPushingCloud(true);
     try {
       const success = await pushTeacherDataToCloud(activeUser, db);
       if (success) {
@@ -857,7 +858,7 @@ export default function TabFSettings({
         message: 'Não foi possível enviar os dados para a nuvem. Verifique sua conexão com a internet e tente novamente.'
       });
     } finally {
-      setIsSyncingCloud(false);
+      setIsPushingCloud(false);
     }
   };
 
@@ -873,7 +874,7 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         setConfirmDialog(null);
-        setIsSyncingCloud(true);
+        setIsPullingCloud(true);
         try {
           const success = await pullTeacherDataFromCloud(activeUser, db);
           if (success) {
@@ -896,7 +897,7 @@ export default function TabFSettings({
             message: 'Não foi possível baixar os dados da nuvem. Verifique sua conexão com a internet.'
           });
         } finally {
-          setIsSyncingCloud(false);
+          setIsPullingCloud(false);
         }
       }
     });
@@ -1654,6 +1655,117 @@ export default function TabFSettings({
         } catch (err) {
           console.error(err);
           setConfirmDialog(null);
+        }
+      }
+    });
+  };
+
+  // Cleanup Duplicate Schools and Example Schools
+  const handleCleanupDuplicatesAndExamples = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Limpar Escolas de Exemplo e Duplicadas',
+      message: 'Esta ação irá apagar definitivamente as escolas de exemplo ("Escola Estadual Cora Coralina" e "Colégio Integral Anglo") e também resolverá qualquer duplicidade de escolas com o mesmo nome (mantendo apenas uma). Seus dados serão atualizados localmente e na nuvem. Deseja continuar?',
+      confirmText: 'Limpar e Sincronizar',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          const allSchools = await db.schools.toArray();
+          const exampleNames = ['escola estadual cora coralina', 'colégio integral anglo'];
+          
+          // Group schools by lowercased name
+          const groupedByName: { [name: string]: School[] } = {};
+          for (const sch of allSchools) {
+            const normalizedName = sch.name.trim().toLowerCase();
+            if (!groupedByName[normalizedName]) {
+              groupedByName[normalizedName] = [];
+            }
+            groupedByName[normalizedName].push(sch);
+          }
+
+          const schoolIdsToDelete = new Set<number>();
+
+          for (const name of Object.keys(groupedByName)) {
+            const list = groupedByName[name];
+            // If it is an example school, delete ALL of them
+            if (exampleNames.includes(name)) {
+              for (const sch of list) {
+                if (sch.id) schoolIdsToDelete.add(sch.id);
+              }
+            } else {
+              // For other schools, if there are duplicates, keep the oldest one (with the lowest ID) and delete the rest
+              if (list.length > 1) {
+                list.sort((a, b) => (a.id || 0) - (b.id || 0));
+                for (let i = 1; i < list.length; i++) {
+                  const sch = list[i];
+                  if (sch.id) schoolIdsToDelete.add(sch.id);
+                }
+              }
+            }
+          }
+
+          if (schoolIdsToDelete.size === 0) {
+            setAlertDialog({
+              isOpen: true,
+              title: 'Tudo Limpo!',
+              message: 'Nenhuma escola de exemplo ou escola duplicada foi encontrada no seu diário local.'
+            });
+            return;
+          }
+
+          // Execute cascading deletions inside a transaction
+          await db.transaction('rw', [
+            db.schools, db.classes, db.students, db.bimonthlyGrades,
+            db.attendance, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads
+          ], async () => {
+            for (const schId of schoolIdsToDelete) {
+              await db.schools.delete(schId);
+              
+              const relatedClasses = await db.classes.where({ schoolId: schId }).toArray();
+              for (const c of relatedClasses) {
+                await db.classes.delete(c.id!);
+                
+                const relatedStudents = await db.students.where({ classId: c.id! }).toArray();
+                for (const s of relatedStudents) {
+                  await db.students.delete(s.id!);
+                  await db.bimonthlyGrades.where({ studentId: s.id! }).delete();
+                  await db.attendance.where({ studentId: s.id! }).delete();
+                  await db.studentVistos.where({ studentId: s.id! }).delete();
+                  await db.vistoRankingScores.where({ studentId: s.id! }).delete();
+                  await db.extraGrades.where({ studentId: s.id! }).delete();
+                }
+              }
+              
+              await db.weeklySchedule.where({ schoolId: schId }).delete();
+              for (const c of relatedClasses) {
+                await db.subjectWorkloads.where({ classId: c.id! }).delete();
+              }
+            }
+          });
+
+          // Sync changes immediately with the cloud (this will perform physical deletes in Firestore)
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
+          setAlertDialog({
+            isOpen: true,
+            title: 'Limpeza Concluída!',
+            message: 'As escolas de exemplo e duplicadas foram excluídas com sucesso localmente e na nuvem!',
+            onClose: () => {
+              window.location.reload();
+            }
+          });
+
+        } catch (err) {
+          console.error('Error during schools cleanup:', err);
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro na Limpeza',
+            message: 'Ocorreu um erro ao tentar limpar as escolas de exemplo e duplicadas.'
+          });
         }
       }
     });
@@ -3323,11 +3435,17 @@ export default function TabFSettings({
                 </p>
                 <button
                   type="button"
-                  disabled={isSyncingCloud}
+                  disabled={isPushingCloud || isPullingCloud}
                   onClick={handleCloudPush}
-                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                  className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:text-emerald-300 disabled:opacity-75 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
                 >
-                  {isSyncingCloud ? 'Sincronizando...' : <><CloudUpload className="w-4 h-4" /> Enviar para Nuvem</>}
+                  {isPushingCloud ? (
+                    <span className="flex items-center gap-1.5 animate-pulse">Enviando para Nuvem...</span>
+                  ) : isPullingCloud ? (
+                    'Aguarde...'
+                  ) : (
+                    <><CloudUpload className="w-4 h-4" /> Enviar para Nuvem</>
+                  )}
                 </button>
               </div>
 
@@ -3342,11 +3460,17 @@ export default function TabFSettings({
                 </p>
                 <button
                   type="button"
-                  disabled={isSyncingCloud}
+                  disabled={isPushingCloud || isPullingCloud}
                   onClick={handleCloudPull}
-                  className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-500 disabled:opacity-75 text-blue-400 border border-blue-500/20 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  {isSyncingCloud ? 'Sincronizando...' : <><CloudDownload className="w-4 h-4" /> Baixar da Nuvem</>}
+                  {isPullingCloud ? (
+                    <span className="flex items-center gap-1.5 animate-pulse">Baixando da Nuvem...</span>
+                  ) : isPushingCloud ? (
+                    'Aguarde...'
+                  ) : (
+                    <><CloudDownload className="w-4 h-4" /> Baixar da Nuvem</>
+                  )}
                 </button>
               </div>
             </div>
@@ -3367,6 +3491,23 @@ export default function TabFSettings({
               className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-yellow-400 border border-yellow-500/20 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
               <Sparkles className="w-4 h-4" /> Carregar Dados de Demonstração
+            </button>
+          </div>
+
+          {/* Maintenance & Cleanup Utilities */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-red-400" /> Manutenção e Limpeza de Dados
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Use as ferramentas de manutenção abaixo para corrigir duplicidades de escolas geradas por acessos simultâneos ou para excluir de vez as escolas de demonstração do seu diário.
+            </p>
+            <button
+              type="button"
+              onClick={handleCleanupDuplicatesAndExamples}
+              className="px-4 py-2.5 bg-red-950/40 hover:bg-red-900/40 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" /> Excluir Escolas de Exemplo & Limpar Duplicados
             </button>
           </div>
 

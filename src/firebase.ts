@@ -266,7 +266,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   }
 }
 
-// Push all local diary data to cloud (Full Backup/Override)
+// Push all local diary data to cloud (Full Backup/Override with precise Deletes)
 export async function pushTeacherDataToCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
   if (isCloudFallback()) return false;
@@ -277,33 +277,83 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any): Pr
   try {
     const userLower = username.toLowerCase();
 
-    for (const tableName of TABLES_TO_SYNC) {
-      if (!dexieDb[tableName]) continue;
-      
-      const localRecords = await dexieDb[tableName].toArray();
+    // 1. Fetch all local records and cloud document IDs in parallel to minimize latency
+    const tablesData = await Promise.all(
+      TABLES_TO_SYNC.map(async (tableName) => {
+        let records: any[] = [];
+        if (dexieDb[tableName]) {
+          records = await dexieDb[tableName].toArray();
+        }
+        
+        let cloudDocIds: string[] = [];
+        try {
+          const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
+          const snapshot = await getDocs(colRef);
+          snapshot.forEach((doc) => {
+            cloudDocIds.push(doc.id);
+          });
+        } catch (err) {
+          console.warn(`Could not fetch cloud doc IDs for ${tableName}:`, err);
+        }
+        
+        return { tableName, records, cloudDocIds };
+      })
+    );
+
+    // 2. Prepare batches of max 400 operations across all tables (sets and deletes)
+    const batches: any[] = [];
+    let currentBatch = writeBatch(dbInstance);
+    let opCount = 0;
+
+    for (const { tableName, records, cloudDocIds } of tablesData) {
       const colPath = `diaries/${userLower}/${tableName}`;
+      const localIds = new Set(records.map(r => String(r.id)));
 
-      let batch = writeBatch(dbInstance);
-      let opCount = 0;
+      // A. Delete cloud records that no longer exist locally
+      for (const cloudDocId of cloudDocIds) {
+        if (!localIds.has(cloudDocId)) {
+          const docRef = doc(dbInstance, colPath, cloudDocId);
+          currentBatch.delete(docRef);
+          opCount++;
 
-      for (const record of localRecords) {
-        if (!record.id) continue;
-        const docRef = doc(dbInstance, colPath, String(record.id));
-        const cleanedRecord = cleanDataForFirestore(record);
-        batch.set(docRef, cleanedRecord);
-        opCount++;
-
-        if (opCount === 400) {
-          await batch.commit();
-          batch = writeBatch(dbInstance);
-          opCount = 0;
+          if (opCount === 400) {
+            batches.push(currentBatch);
+            currentBatch = writeBatch(dbInstance);
+            opCount = 0;
+          }
         }
       }
 
-      if (opCount > 0) {
-        await batch.commit();
+      // B. Set or update local records in the cloud
+      for (const record of records) {
+        if (!record.id) continue;
+        const docRef = doc(dbInstance, colPath, String(record.id));
+        const cleanedRecord = cleanDataForFirestore(record);
+        currentBatch.set(docRef, cleanedRecord);
+        opCount++;
+
+        if (opCount === 400) {
+          batches.push(currentBatch);
+          currentBatch = writeBatch(dbInstance);
+          opCount = 0;
+        }
       }
     }
+
+    if (opCount > 0) {
+      batches.push(currentBatch);
+    }
+
+    if (batches.length === 0) {
+      return true; // nothing to push or delete
+    }
+
+    // 3. Commit all batches in parallel with a reasonable total timeout of 30 seconds
+    await withTimeout(
+      Promise.all(batches.map(batch => batch.commit())),
+      30000
+    );
+
     return true;
   } catch (error) {
     console.error(`Error pushing diary data for ${username}:`, error);

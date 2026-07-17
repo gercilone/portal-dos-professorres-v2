@@ -96,6 +96,8 @@ function getGradientForName(name: string) {
   return colors[sum % colors.length];
 }
 
+let isDbInitializing = false;
+
 export default function App() {
   const [selectedSchoolId, setSelectedSchoolId] = useState<number | undefined>(undefined);
   const [selectedClassId, setSelectedClassId] = useState<number | undefined>(undefined);
@@ -414,9 +416,9 @@ export default function App() {
           const pullSuccess = await pullTeacherDataFromCloud(matchingProf.username, db);
           
           if (pullSuccess) {
-            // Seed default demo data ONLY if this is a completely blank account in cloud
+            // Seed default demo data ONLY if this is a completely blank account in cloud AND it's the default demo 'professor'
             const schoolCount = await db.schools.count();
-            if (schoolCount === 0) {
+            if (schoolCount === 0 && matchingProf.username.toLowerCase() === 'professor') {
               await seedDatabase();
               // Store seed in cloud so they start synchronized
               await pushTeacherDataToCloud(matchingProf.username, db);
@@ -890,97 +892,104 @@ export default function App() {
   // Seed database silently on mount if empty, and sync with Firebase online database
   useEffect(() => {
     const initDb = async () => {
-      // Sync coordinator profiles list from the cloud on mount
+      if (isDbInitializing) return;
+      isDbInitializing = true;
+
       try {
-        const updatedList = await syncCoordinatorsListInCloud();
-        if (updatedList && updatedList.length > 0) {
-          setCoordinators(updatedList);
-        }
-      } catch (err) {
-        console.error('Error syncing coordinators list on mount:', err);
-      }
-
-      // Sync professor profiles list from the cloud on mount
-      try {
-        const updatedList = await syncProfessorsListInCloud();
-        if (updatedList && updatedList.length > 0) {
-          setProfessors(updatedList);
-        }
-      } catch (err) {
-        console.error('Error syncing professors list on mount:', err);
-      }
-
-      // Check active teacher data sync
-      const activeUser = localStorage.getItem('portal_active_user');
-      const role = localStorage.getItem('portal_user_role') || 'teacher';
-      const inspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
-      const needsInspectPull = localStorage.getItem('portal_needs_inspect_pull') === 'true';
-
-      if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
+        // Sync coordinator profiles list from the cloud on mount
         try {
-          const schoolCount = await db.schools.count();
-          const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
-          const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0 || forcePull);
-
-          if (shouldPull) {
-            setIsInitialSyncing(true);
-            setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
-            
-            const pullSuccess = await pullTeacherDataFromCloud(activeUser, db);
-
-            if (forcePull) {
-              localStorage.removeItem('portal_force_cloud_pull');
-            }
-
-            if (inspecting && needsInspectPull) {
-              localStorage.removeItem('portal_needs_inspect_pull');
-            }
-            
-            // If still 0 schools, we successfully contacted the cloud, and we are NOT inspecting, it's a completely new user. Let's seed default demo data!
-            if (pullSuccess) {
-              const newSchoolCount = await db.schools.count();
-              if (newSchoolCount === 0 && !inspecting) {
-                setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
-                await seedDatabase();
-                // Save the seeded data back to Firestore so it starts synced!
-                await pushTeacherDataToCloud(activeUser, db);
-              }
-            } else {
-              console.warn('Pull from cloud failed on startup. Skipping seed to prevent overwriting cloud data.');
-            }
-            
-            setIsInitialSyncing(false);
-            window.location.reload();
+          const updatedList = await syncCoordinatorsListInCloud();
+          if (updatedList && updatedList.length > 0) {
+            setCoordinators(updatedList);
           }
         } catch (err) {
-          console.error('Error during startup sync:', err);
-          setIsInitialSyncing(false);
-          if (!inspecting) {
+          console.error('Error syncing coordinators list on mount:', err);
+        }
+
+        // Sync professor profiles list from the cloud on mount
+        try {
+          const updatedList = await syncProfessorsListInCloud();
+          if (updatedList && updatedList.length > 0) {
+            setProfessors(updatedList);
+          }
+        } catch (err) {
+          console.error('Error syncing professors list on mount:', err);
+        }
+
+        // Check active teacher data sync
+        const activeUser = localStorage.getItem('portal_active_user');
+        const role = localStorage.getItem('portal_user_role') || 'teacher';
+        const inspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
+        const needsInspectPull = localStorage.getItem('portal_needs_inspect_pull') === 'true';
+
+        if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
+          try {
+            const schoolCount = await db.schools.count();
+            const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
+            const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0 || forcePull);
+
+            if (shouldPull) {
+              setIsInitialSyncing(true);
+              setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
+              
+              const pullSuccess = await pullTeacherDataFromCloud(activeUser, db);
+
+              if (forcePull) {
+                localStorage.removeItem('portal_force_cloud_pull');
+              }
+
+              if (inspecting && needsInspectPull) {
+                localStorage.removeItem('portal_needs_inspect_pull');
+              }
+              
+              // If still 0 schools, we successfully contacted the cloud, and we are NOT inspecting, it's a completely new user. Let's seed default demo data only for default 'professor'!
+              if (pullSuccess) {
+                const newSchoolCount = await db.schools.count();
+                if (newSchoolCount === 0 && !inspecting && activeUser.toLowerCase() === 'professor') {
+                  setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
+                  await seedDatabase();
+                  // Save the seeded data back to Firestore so it starts synced!
+                  await pushTeacherDataToCloud(activeUser, db);
+                }
+              } else {
+                console.warn('Pull from cloud failed on startup. Skipping seed to prevent overwriting cloud data.');
+              }
+              
+              setIsInitialSyncing(false);
+              window.location.reload();
+            }
+          } catch (err) {
+            console.error('Error during startup sync:', err);
+            setIsInitialSyncing(false);
+            if (!inspecting && activeUser.toLowerCase() === 'professor') {
+              await seedDatabase();
+            }
+          }
+        } else if (activeUser && isAuthenticated && role === 'coordinator') {
+          try {
+            const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
+            if (forcePull) {
+              setIsInitialSyncing(true);
+              setSyncStatusMessage('Sincronizando com a Nuvem... Carregando dados da coordenação e turmas...');
+              // Wait 1.2 seconds for a smooth visual feedback
+              await new Promise((r) => setTimeout(r, 1200));
+              await syncCoordinatorsListInCloud();
+              await syncProfessorsListInCloud();
+              localStorage.removeItem('portal_force_cloud_pull');
+              setIsInitialSyncing(false);
+            }
+          } catch (err) {
+            console.error('Error during coordinator startup sync:', err);
+            setIsInitialSyncing(false);
+          }
+        } else {
+          // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)
+          if (!activeUser || (role === 'teacher' && activeUser.toLowerCase() === 'professor')) {
             await seedDatabase();
           }
         }
-      } else if (activeUser && isAuthenticated && role === 'coordinator') {
-        try {
-          const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
-          if (forcePull) {
-            setIsInitialSyncing(true);
-            setSyncStatusMessage('Sincronizando com a Nuvem... Carregando dados da coordenação e turmas...');
-            // Wait 1.2 seconds for a smooth visual feedback
-            await new Promise((r) => setTimeout(r, 1200));
-            await syncCoordinatorsListInCloud();
-            await syncProfessorsListInCloud();
-            localStorage.removeItem('portal_force_cloud_pull');
-            setIsInitialSyncing(false);
-          }
-        } catch (err) {
-          console.error('Error during coordinator startup sync:', err);
-          setIsInitialSyncing(false);
-        }
-      } else {
-        // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)
-        if (!activeUser || role === 'teacher') {
-          await seedDatabase();
-        }
+      } finally {
+        isDbInitializing = false;
       }
     };
     initDb();

@@ -117,19 +117,26 @@ export const db = new Proxy({}, {
   }
 }) as TeacherDatabase;
 
+let isSeeding = false;
+
 // Seed function to initialize dummy data if db is empty
 export async function seedDatabase() {
-  if (localStorage.getItem('portal_skip_seed') === 'true') {
-    return;
-  }
-  const schoolCount = await db.schools.count();
-  if (schoolCount > 0) return;
+  if (isSeeding) return;
+  isSeeding = true;
 
-  setCloudSyncDisabled(true);
   try {
-    // Insert School
-    const schoolId = await db.schools.add({ name: 'Escola Estadual Cora Coralina' });
-    const schoolId2 = await db.schools.add({ name: 'Colégio Integral Anglo' });
+    if (localStorage.getItem('portal_skip_seed') === 'true') {
+      return;
+    }
+    const schoolCount = await db.schools.count();
+    if (schoolCount > 0) return;
+
+    setCloudSyncDisabled(true);
+    try {
+      // Insert School
+      const schoolId = await db.schools.add({ name: 'Escola Estadual Cora Coralina' });
+      const schoolId2 = await db.schools.add({ name: 'Colégio Integral Anglo' });
+
 
     // Insert Classes
     const classId1 = await db.classes.add({ name: '1º Ano A - Ensino Médio', schoolId });
@@ -314,8 +321,11 @@ export async function seedDatabase() {
         });
       }
     }
+    } finally {
+      setCloudSyncDisabled(false);
+    }
   } finally {
-    setCloudSyncDisabled(false);
+    isSeeding = false;
   }
 
   // After seeding, push the seeded database to Firestore
