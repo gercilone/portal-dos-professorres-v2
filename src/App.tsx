@@ -396,15 +396,19 @@ export default function App() {
             }
           }
 
-          // Pull fresh
-          await pullTeacherDataFromCloud(matchingProf.username, db);
-
-          // Seed default demo data ONLY if this is a completely blank account in cloud
-          const schoolCount = await db.schools.count();
-          if (schoolCount === 0) {
-            await seedDatabase();
-            // Store seed in cloud so they start synchronized
-            await pushTeacherDataToCloud(matchingProf.username, db);
+          // Pull fresh and verify success before seeding
+          const pullSuccess = await pullTeacherDataFromCloud(matchingProf.username, db);
+          
+          if (pullSuccess) {
+            // Seed default demo data ONLY if this is a completely blank account in cloud
+            const schoolCount = await db.schools.count();
+            if (schoolCount === 0) {
+              await seedDatabase();
+              // Store seed in cloud so they start synchronized
+              await pushTeacherDataToCloud(matchingProf.username, db);
+            }
+          } else {
+            console.warn('Pull from cloud failed during login. Skipping automatic seed to prevent overwriting cloud data.');
           }
         } catch (err) {
           console.error('Error restoring cloud data on login:', err);
@@ -908,7 +912,7 @@ export default function App() {
             setIsInitialSyncing(true);
             setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
             
-            await pullTeacherDataFromCloud(activeUser, db);
+            const pullSuccess = await pullTeacherDataFromCloud(activeUser, db);
 
             if (forcePull) {
               localStorage.removeItem('portal_force_cloud_pull');
@@ -918,13 +922,17 @@ export default function App() {
               localStorage.removeItem('portal_needs_inspect_pull');
             }
             
-            // If still 0 schools and we are NOT inspecting, it's a completely new user. Let's seed default demo data!
-            const newSchoolCount = await db.schools.count();
-            if (newSchoolCount === 0 && !inspecting) {
-              setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
-              await seedDatabase();
-              // Save the seeded data back to Firestore so it starts synced!
-              await pushTeacherDataToCloud(activeUser, db);
+            // If still 0 schools, we successfully contacted the cloud, and we are NOT inspecting, it's a completely new user. Let's seed default demo data!
+            if (pullSuccess) {
+              const newSchoolCount = await db.schools.count();
+              if (newSchoolCount === 0 && !inspecting) {
+                setSyncStatusMessage('Nenhum dado encontrado na nuvem. Criando diários de demonstração...');
+                await seedDatabase();
+                // Save the seeded data back to Firestore so it starts synced!
+                await pushTeacherDataToCloud(activeUser, db);
+              }
+            } else {
+              console.warn('Pull from cloud failed on startup. Skipping seed to prevent overwriting cloud data.');
             }
             
             setIsInitialSyncing(false);

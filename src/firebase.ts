@@ -227,7 +227,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   try {
     const userLower = username.toLowerCase();
     
-    // Fetch all tables in parallel to make it extremely fast, wrapped in a 5-second timeout!
+    // Fetch all tables in parallel to make it extremely fast, wrapped in a 25-second timeout for mobile networks!
     const fetchAllPromise = Promise.all(
       TABLES_TO_SYNC.map(async (tableName) => {
         try {
@@ -247,7 +247,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
       })
     );
 
-    const results = await withTimeout(fetchAllPromise, 5000);
+    const results = await withTimeout(fetchAllPromise, 25000);
 
     for (const { tableName, records } of results) {
       if (dexieDb[tableName]) {
