@@ -93,8 +93,18 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 8000): Promise<
   });
 }
 
+// Helper to check if we are in local fallback mode
+export function isCloudFallback(): boolean {
+  return localStorage.getItem('portal_cloud_fallback') === 'true';
+}
+
 // 1. PROFESSORS PROFILES SYNC (Cloud Database Shared Registry)
 export async function syncProfessorsListInCloud() {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_professors_list');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_professors_list');
@@ -168,6 +178,8 @@ export async function saveProfessorToCloud(prof: ProfessorAccount) {
   }
   localStorage.setItem('portal_professors_list', JSON.stringify(list));
 
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
 
@@ -205,6 +217,8 @@ const TABLES_TO_SYNC = [
 // Pull all diary data from cloud for a specific professor and save to Dexie
 export async function pullTeacherDataFromCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
+  if (isCloudFallback()) return false;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return false;
 
@@ -255,6 +269,8 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
 // Push all local diary data to cloud (Full Backup/Override)
 export async function pushTeacherDataToCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
+  if (isCloudFallback()) return false;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return false;
 
@@ -304,6 +320,8 @@ export async function syncSingleRecord(
   action: 'set' | 'delete'
 ) {
   if (!username || !tableName || !recordId) return;
+  if (isCloudFallback()) return;
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
 

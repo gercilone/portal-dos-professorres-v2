@@ -5,6 +5,99 @@ import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortC
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads } from '../firebase';
 
+export function getSchoolColorClasses(schoolId: number | undefined) {
+  if (!schoolId) {
+    return {
+      bg: 'bg-zinc-800/30',
+      border: 'border-zinc-700/30',
+      text: 'text-zinc-400',
+      badgeBg: 'bg-zinc-950',
+      badgeText: 'text-zinc-400',
+      badgeBorder: 'border-zinc-800',
+      buttonSelected: 'bg-zinc-700 text-white border-zinc-600',
+      buttonNormal: 'bg-zinc-950/50 border-zinc-800 text-zinc-400 hover:text-zinc-250 hover:bg-zinc-900',
+      accentColor: 'bg-zinc-500'
+    };
+  }
+  
+  const themes = [
+    {
+      // Theme 1: Indigo/Blue (Professional, Morning feel)
+      bg: 'bg-indigo-500/10',
+      border: 'border-indigo-500/25',
+      text: 'text-indigo-300',
+      badgeBg: 'bg-indigo-950/40',
+      badgeText: 'text-indigo-400',
+      badgeBorder: 'border-indigo-500/30',
+      buttonSelected: 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-indigo-300 hover:border-indigo-500/30 hover:bg-indigo-500/5',
+      accentColor: 'bg-indigo-500'
+    },
+    {
+      // Theme 2: Amber/Teal/Teal (Warm/Afternoon feel)
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/25',
+      text: 'text-amber-300',
+      badgeBg: 'bg-amber-950/40',
+      badgeText: 'text-amber-400',
+      badgeBorder: 'border-amber-500/30',
+      buttonSelected: 'bg-amber-600 text-white border-amber-500 shadow-md shadow-amber-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-amber-300 hover:border-amber-500/30 hover:bg-amber-500/5',
+      accentColor: 'bg-amber-500'
+    },
+    {
+      // Theme 3: Emerald (Cool, elegant)
+      bg: 'bg-emerald-500/10',
+      border: 'border-emerald-500/25',
+      text: 'text-emerald-300',
+      badgeBg: 'bg-emerald-950/40',
+      badgeText: 'text-emerald-400',
+      badgeBorder: 'border-emerald-500/30',
+      buttonSelected: 'bg-emerald-600 text-white border-emerald-500 shadow-md shadow-emerald-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-emerald-300 hover:border-emerald-500/30 hover:bg-emerald-500/5',
+      accentColor: 'bg-emerald-500'
+    },
+    {
+      // Theme 4: Pink/Rose
+      bg: 'bg-pink-500/10',
+      border: 'border-pink-500/25',
+      text: 'text-pink-300',
+      badgeBg: 'bg-pink-950/40',
+      badgeText: 'text-pink-400',
+      badgeBorder: 'border-pink-500/30',
+      buttonSelected: 'bg-pink-600 text-white border-pink-500 shadow-md shadow-pink-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-pink-300 hover:border-pink-500/30 hover:bg-pink-500/5',
+      accentColor: 'bg-pink-500'
+    },
+    {
+      // Theme 5: Violet/Purple
+      bg: 'bg-violet-500/10',
+      border: 'border-violet-500/25',
+      text: 'text-violet-300',
+      badgeBg: 'bg-violet-950/40',
+      badgeText: 'text-violet-400',
+      badgeBorder: 'border-violet-500/30',
+      buttonSelected: 'bg-violet-600 text-white border-violet-500 shadow-md shadow-violet-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-violet-300 hover:border-violet-500/30 hover:bg-violet-500/5',
+      accentColor: 'bg-violet-500'
+    },
+    {
+      // Theme 6: Cyan/Sky
+      bg: 'bg-cyan-500/10',
+      border: 'border-cyan-500/25',
+      text: 'text-cyan-300',
+      badgeBg: 'bg-cyan-950/40',
+      badgeText: 'text-cyan-400',
+      badgeBorder: 'border-cyan-500/30',
+      buttonSelected: 'bg-cyan-600 text-white border-cyan-500 shadow-md shadow-cyan-500/10',
+      buttonNormal: 'bg-zinc-950/40 border-zinc-800 text-zinc-400 hover:text-cyan-300 hover:border-cyan-500/30 hover:bg-cyan-500/5',
+      accentColor: 'bg-cyan-500'
+    }
+  ];
+
+  return themes[schoolId % themes.length];
+}
+
 interface TabFSettingsProps {
   teacherName: string;
   setTeacherName: (name: string) => void;
@@ -2085,12 +2178,22 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                     <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma disciplina importada ainda. Clique em Sincronizar acima.</p>
                   ) : (
                     subjects.map((sub) => (
-                      <div key={sub.id} className="flex items-center justify-between py-2 text-xs text-zinc-300 gap-2">
+                      <div key={sub.id} className="flex items-center justify-between py-2 text-xs text-zinc-300 gap-2 group">
                         <div className="flex items-center gap-2 truncate pr-2">
                           <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                           <span className="truncate font-medium">{sub.name}</span>
                         </div>
-                        <span className="text-[9px] bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold px-2 py-0.5 rounded-full uppercase">Oficial</span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[9px] bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold px-2 py-0.5 rounded-full uppercase">Oficial</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubject(sub.id!)}
+                            className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded transition cursor-pointer"
+                            title="Excluir Disciplina"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))
                   )}
@@ -2368,6 +2471,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   <div className="flex flex-wrap gap-2">
                     {schools.map((s) => {
                       const isSelected = schedSchool === s.id;
+                      const schoolColors = getSchoolColorClasses(s.id);
                       return (
                         <button
                           key={s.id}
@@ -2376,10 +2480,10 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                             setSchedSchool(s.id);
                             setSchedClass(undefined);
                           }}
-                          className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                          className={`px-5 py-3 text-sm font-extrabold tracking-wide uppercase transition duration-200 cursor-pointer rounded-xl border ${
                             isSelected
-                              ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
-                              : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                              ? schoolColors.buttonSelected
+                              : schoolColors.buttonNormal
                           }`}
                         >
                           {s.name}
@@ -2404,15 +2508,16 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                       .sort(sortClasses)
                       .map((c) => {
                         const isSelected = schedClass === c.id;
+                        const schoolColors = getSchoolColorClasses(schedSchool);
                         return (
                           <button
                             key={c.id}
                             type="button"
                             onClick={() => setSchedClass(c.id)}
-                            className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                            className={`px-5 py-3 text-sm font-extrabold tracking-wide uppercase transition duration-200 cursor-pointer rounded-xl border ${
                               isSelected
-                                ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
-                                : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                                ? schoolColors.buttonSelected
+                                : schoolColors.buttonNormal
                             }`}
                           >
                             {c.name}
@@ -2437,15 +2542,16 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   <div className="flex flex-wrap gap-2">
                     {subjects.map((s) => {
                       const isSelected = schedSubject === s.id;
+                      const schoolColors = getSchoolColorClasses(schedSchool);
                       return (
                         <button
                           key={s.id}
                           type="button"
                           onClick={() => setSchedSubject(s.id)}
-                          className={`px-4 py-2 rounded-xl text-xs font-bold transition duration-200 cursor-pointer ${
+                          className={`px-5 py-3 text-sm font-extrabold tracking-wide uppercase transition duration-200 cursor-pointer rounded-xl border ${
                             isSelected
-                              ? 'bg-blue-600 text-white border border-blue-500 shadow-md shadow-blue-500/20'
-                              : 'bg-zinc-950 text-zinc-300 border border-zinc-800 hover:bg-zinc-900'
+                              ? schoolColors.buttonSelected
+                              : schoolColors.buttonNormal
                           }`}
                         >
                           {s.name}
@@ -2672,7 +2778,7 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   <p className="text-xs text-zinc-500">Nenhum agendamento na grade semanal.</p>
                 </div>
               ) : (
-                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                <div className="space-y-5">
                   {[1, 2, 3, 4, 5, 6, 7].map((dayNum) => {
                     const daySchedules = weeklySchedules.filter((ws) => ws.dayOfWeek === dayNum);
                     if (daySchedules.length === 0) return null;
@@ -2686,28 +2792,44 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
                           {getDayName(dayNum)}
                         </div>
-                        <div className="divide-y divide-zinc-800/50 bg-zinc-950/40 px-3 py-1 rounded-xl border border-zinc-800">
+                        <div className="space-y-2">
                           {sortedDaySchedules.map((ws) => {
                             const sch = schools.find((s) => s.id === ws.schoolId);
                             const cl = classes.find((c) => c.id === ws.classId);
                             const sub = subjects.find((s) => s.id === ws.subjectId);
+                            const schoolColors = getSchoolColorClasses(ws.schoolId);
                             return (
-                              <div key={ws.id} className="flex items-center justify-between py-2.5 text-xs text-zinc-300">
-                                <div>
-                                  <span className="font-semibold text-zinc-200 block sm:inline sm:mr-2">
-                                    Horário: {ws.timeSlot}
-                                  </span>
-                                  <span className="text-[10px] text-zinc-500 block sm:inline sm:before:content-['|'] sm:before:mx-2 sm:before:text-zinc-700">
-                                    {cl?.name} - {sub?.name} ({sch?.name})
-                                  </span>
+                              <div 
+                                key={ws.id} 
+                                className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-2xl border ${schoolColors.bg} ${schoolColors.border} gap-3 transition-all hover:bg-opacity-90`}
+                              >
+                                <div className="space-y-1.5 flex-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-bold text-zinc-100 text-xs tracking-tight bg-zinc-950/85 px-2.5 py-1 rounded-lg border border-zinc-800">
+                                      {ws.timeSlot}
+                                    </span>
+                                    <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-md border ${schoolColors.badgeBg} ${schoolColors.badgeText} ${schoolColors.badgeBorder}`}>
+                                      {sch?.name || 'Escola não encontrada'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
+                                    <span className="text-base font-extrabold text-zinc-200">
+                                      {cl?.name || 'Sem turma'}
+                                    </span>
+                                    <span className="text-zinc-500 text-xs">•</span>
+                                    <span className="text-xs text-zinc-400 font-bold">
+                                      {sub?.name || 'Sem disciplina'}
+                                    </span>
+                                  </div>
                                 </div>
                                 <button
                                   id={`delete-sched-btn-${ws.id}`}
                                   type="button"
                                   onClick={() => handleDeleteSchedule(ws.id!)}
-                                  className="text-zinc-500 hover:text-rose-400 cursor-pointer p-1.5 hover:bg-zinc-900/60 rounded-lg transition"
+                                  className="text-zinc-400 hover:text-rose-400 cursor-pointer p-2 hover:bg-zinc-900/60 rounded-lg transition shrink-0"
+                                  title="Excluir Agendamento"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
                             );

@@ -22,7 +22,8 @@ import {
   syncCoordinatorsListInCloud,
   syncProfessorsListInCloud,
   pullTeacherDataFromCloud,
-  pushTeacherDataToCloud
+  pushTeacherDataToCloud,
+  getFirestoreInstance
 } from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -120,6 +121,31 @@ export default function App() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  const handleTryReconnectCloud = async () => {
+    localStorage.setItem('portal_cloud_fallback', 'false');
+    setIsCloudFallbackActive(false);
+    window.dispatchEvent(new Event('storage'));
+    
+    try {
+      const dbInstance = getFirestoreInstance();
+      if (dbInstance) {
+        // Try to fetch coordinators list to check actual connection
+        await syncCoordinatorsListInCloud();
+        alert("Excelente! Conexão com a nuvem restabelecida com sucesso. O sistema voltou ao modo online.");
+      } else {
+        localStorage.setItem('portal_cloud_fallback', 'true');
+        setIsCloudFallbackActive(true);
+        window.dispatchEvent(new Event('storage'));
+        alert("Ainda não foi possível conectar com a nuvem. O sistema continuará no modo offline seguro temporariamente.");
+      }
+    } catch (e) {
+      localStorage.setItem('portal_cloud_fallback', 'true');
+      setIsCloudFallbackActive(true);
+      window.dispatchEvent(new Event('storage'));
+      alert("A nuvem ainda está inacessível ou o limite diário de uso não foi reiniciado. O modo offline seguro continuará ativo.");
+    }
+  };
   const [coordinators, setCoordinators] = useState<any[]>(() => {
     const defaultCoords = [
       { username: 'coordenador', password: '123', name: 'Coordenador Geral' },
@@ -1412,11 +1438,20 @@ export default function App() {
         </header>
 
         {isCloudFallbackActive && (
-          <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
-            <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
-            <span className="text-left md:text-center">
-              <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador e estão prontas para teste!
-            </span>
+          <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex flex-col sm:flex-row items-center justify-center gap-3 animate-in slide-in-from-top duration-300">
+            <div className="flex items-center gap-2">
+              <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+              <span className="text-left">
+                <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador!
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleTryReconnectCloud}
+              className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold px-3 py-1 rounded-lg transition duration-200 cursor-pointer text-[10px] shrink-0 uppercase tracking-wider"
+            >
+              Reconectar Nuvem
+            </button>
           </div>
         )}
 
@@ -1812,11 +1847,20 @@ export default function App() {
     <div id="portal-app-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans antialiased selection:bg-blue-600/30 selection:text-blue-200">
       
       {isCloudFallbackActive && (
-        <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
-          <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
-          <span className="text-left md:text-center">
-            <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador e estão prontas para teste!
-          </span>
+        <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex flex-col sm:flex-row items-center justify-center gap-3 animate-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
+            <span className="text-left">
+              <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleTryReconnectCloud}
+            className="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-extrabold px-3 py-1 rounded-lg transition duration-200 cursor-pointer text-[10px] shrink-0 uppercase tracking-wider"
+          >
+            Reconectar Nuvem
+          </button>
         </div>
       )}
 
