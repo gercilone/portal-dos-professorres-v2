@@ -74,11 +74,13 @@ export default function CoordGlobalSubjects() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const schs = await getGlobalSchools();
-      const cls = await getGlobalClasses();
-      const subs = await getGlobalSubjects();
-      const wls = await getGlobalWorkloads();
-      const profs = await syncProfessorsListInCloud();
+      const [schs, cls, subs, wls, profs] = await Promise.all([
+        getGlobalSchools(),
+        getGlobalClasses(),
+        getGlobalSubjects(),
+        getGlobalWorkloads(),
+        syncProfessorsListInCloud()
+      ]);
 
       setSchools(schs);
       setClasses(cls);

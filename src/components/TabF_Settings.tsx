@@ -1252,125 +1252,126 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setConfirmDialog({
-      isOpen: true,
-      title: 'AVISO DE SEGURANÇA',
-      message: 'AVISO: Importar um backup substituirá TODOS os dados atuais no seu navegador de forma irreversível. Deseja continuar?',
-      confirmText: 'Importar Backup',
-      cancelText: 'Cancelar',
-      onConfirm: () => {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            const text = event.target?.result as string;
-            const data = JSON.parse(text);
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const data = JSON.parse(text);
 
+        setConfirmDialog({
+          isOpen: true,
+          title: 'AVISO DE SEGURANÇA',
+          message: 'AVISO: Importar um backup substituirá TODOS os dados atuais no seu navegador de forma irreversível. Deseja continuar?',
+          confirmText: 'Importar Backup',
+          cancelText: 'Cancelar',
+          onConfirm: async () => {
+            setConfirmDialog(null);
             setCloudSyncDisabled(true);
 
-            // 1. NORMALIZE AND MIGRATE DATA STRUCTURES (older backups compatibility)
-            
-            // Normalize bimonth -> bimonthly for bimonthlyGrades
-            if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
-              data.bimonthlyGrades = data.bimonthlyGrades.map((bg: any) => {
-                if (bg.bimonth !== undefined && bg.bimonthly === undefined) {
-                  bg.bimonthly = Number(bg.bimonth);
-                }
-                if (bg.bimonthly === undefined) {
-                  bg.bimonthly = 1;
-                }
-                // Resolve subjectId if missing
-                if (bg.subjectId === undefined) {
-                  bg.subjectId = 10; // default to Mathematics
-                }
-                return bg;
-              });
-            }
-
-            // Extract mid-term recovery grades (recSemestral1, recSemestral2, provaFinal / recSem1, recSem2, finalExam)
-            // from either 'students' or 'bimonthlyGrades' and merge them into 'extraGrades'
-            const extraGradesMap = new Map<string, { studentId: number; subjectId: number; recSem1?: number; recSem2?: number; finalExam?: number }>();
-
-            // Load any existing extraGrades from the backup if they are already structured as a dedicated list
-            if (data.extraGrades && Array.isArray(data.extraGrades)) {
-              data.extraGrades.forEach((eg: any) => {
-                const key = `${eg.studentId}_${eg.subjectId}`;
-                extraGradesMap.set(key, {
-                  studentId: Number(eg.studentId),
-                  subjectId: Number(eg.subjectId),
-                  recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
-                  recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
-                  finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined,
+            try {
+              // 1. NORMALIZE AND MIGRATE DATA STRUCTURES (older backups compatibility)
+              
+              // Normalize bimonth -> bimonthly for bimonthlyGrades
+              if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
+                data.bimonthlyGrades = data.bimonthlyGrades.map((bg: any) => {
+                  if (bg.bimonth !== undefined && bg.bimonthly === undefined) {
+                    bg.bimonthly = Number(bg.bimonth);
+                  }
+                  if (bg.bimonthly === undefined) {
+                    bg.bimonthly = 1;
+                  }
+                  // Resolve subjectId if missing
+                  if (bg.subjectId === undefined) {
+                    bg.subjectId = 10; // default to Mathematics
+                  }
+                  return bg;
                 });
-              });
-            }
-
-            // Try to extract from 'students' records (legacy backups where recovery grades were placed on the student object)
-            if (data.students && Array.isArray(data.students)) {
-              let defaultSubjectId = 10; // default main subject ID
-              if (data.subjects && Array.isArray(data.subjects) && data.subjects.length > 0) {
-                const firstSub = data.subjects[0];
-                if (firstSub && firstSub.id) defaultSubjectId = Number(firstSub.id);
               }
 
-              data.students.forEach((student: any) => {
-                const recSem1 = student.recSem1 ?? student.recSemestral1;
-                const recSem2 = student.recSem2 ?? student.recSemestral2;
-                const finalExam = student.finalExam ?? student.provaFinal;
+              // Extract mid-term recovery grades (recSemestral1, recSemestral2, provaFinal / recSem1, recSem2, finalExam)
+              // from either 'students' or 'bimonthlyGrades' and merge them into 'extraGrades'
+              const extraGradesMap = new Map<string, { studentId: number; subjectId: number; recSem1?: number; recSem2?: number; finalExam?: number }>();
 
-                if (
-                  (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
-                  (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
-                  (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
-                ) {
-                  const sId = Number(student.id);
-                  const key = `${sId}_${defaultSubjectId}`;
-                  const existing = extraGradesMap.get(key) || { studentId: sId, subjectId: defaultSubjectId };
+              // Load any existing extraGrades from the backup if they are already structured as a dedicated list
+              if (data.extraGrades && Array.isArray(data.extraGrades)) {
+                data.extraGrades.forEach((eg: any) => {
+                  const key = `${eg.studentId}_${eg.subjectId}`;
+                  extraGradesMap.set(key, {
+                    studentId: Number(eg.studentId),
+                    subjectId: Number(eg.subjectId),
+                    recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
+                    recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
+                    finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined,
+                  });
+                });
+              }
 
-                  if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
-                  if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
-                  if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
-
-                  extraGradesMap.set(key, existing);
+              // Try to extract from 'students' records (legacy backups where recovery grades were placed on the student object)
+              if (data.students && Array.isArray(data.students)) {
+                let defaultSubjectId = 10; // default main subject ID
+                if (data.subjects && Array.isArray(data.subjects) && data.subjects.length > 0) {
+                  const firstSub = data.subjects[0];
+                  if (firstSub && firstSub.id) defaultSubjectId = Number(firstSub.id);
                 }
-              });
-            }
 
-            // Try to extract from 'bimonthlyGrades' records (legacy backups where recovery was on grade entries)
-            if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
-              data.bimonthlyGrades.forEach((bg: any) => {
-                const recSem1 = bg.recSem1 ?? bg.recSemestral1;
-                const recSem2 = bg.recSem2 ?? bg.recSemestral2;
-                const finalExam = bg.finalExam ?? bg.provaFinal;
-                const bgSubjectId = Number(bg.subjectId || 10);
-                const bgStudentId = Number(bg.studentId);
+                data.students.forEach((student: any) => {
+                  const recSem1 = student.recSem1 ?? student.recSemestral1;
+                  const recSem2 = student.recSem2 ?? student.recSemestral2;
+                  const finalExam = student.finalExam ?? student.provaFinal;
 
-                if (
-                  (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
-                  (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
-                  (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
-                ) {
-                  const key = `${bgStudentId}_${bgSubjectId}`;
-                  const existing = extraGradesMap.get(key) || { studentId: bgStudentId, subjectId: bgSubjectId };
+                  if (
+                    (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+                    (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+                    (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+                  ) {
+                    const sId = Number(student.id);
+                    const key = `${sId}_${defaultSubjectId}`;
+                    const existing = extraGradesMap.get(key) || { studentId: sId, subjectId: defaultSubjectId };
 
-                  if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
-                  if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
-                  if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+                    if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+                    if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+                    if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
 
-                  extraGradesMap.set(key, existing);
-                }
-              });
-            }
+                    extraGradesMap.set(key, existing);
+                  }
+                });
+              }
 
-            // Format extraGrades for Dexie bulk insertion
-            if (extraGradesMap.size > 0) {
-              data.extraGrades = Array.from(extraGradesMap.values()).map((eg, idx) => ({
-                id: idx + 1,
-                ...eg
-              }));
-            }
+              // Try to extract from 'bimonthlyGrades' records (legacy backups where recovery was on grade entries)
+              if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
+                data.bimonthlyGrades.forEach((bg: any) => {
+                  const recSem1 = bg.recSem1 ?? bg.recSemestral1;
+                  const recSem2 = bg.recSem2 ?? bg.recSemestral2;
+                  const finalExam = bg.finalExam ?? bg.provaFinal;
+                  const bgSubjectId = Number(bg.subjectId || 10);
+                  const bgStudentId = Number(bg.studentId);
 
-            // Transactional overwrite
-            try {
+                  if (
+                    (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+                    (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+                    (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+                  ) {
+                    const key = `${bgStudentId}_${bgSubjectId}`;
+                    const existing = extraGradesMap.get(key) || { studentId: bgStudentId, subjectId: bgSubjectId };
+
+                    if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+                    if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+                    if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+
+                    extraGradesMap.set(key, existing);
+                  }
+                });
+              }
+
+              // Format extraGrades for Dexie bulk insertion
+              if (extraGradesMap.size > 0) {
+                data.extraGrades = Array.from(extraGradesMap.values()).map((eg, idx) => ({
+                  id: idx + 1,
+                  ...eg
+                }));
+              }
+
+              // Transactional overwrite
               await db.transaction('rw', [
                 db.schools, db.classes, db.subjects, db.students, db.subjectWorkloads,
                 db.weeklySchedule, db.bimonthlyGrades, db.assignmentDescriptions,
@@ -1417,33 +1418,38 @@ export default function TabFSettings({ teacherName, setTeacherName, onSecuritySa
                   console.error('Failed to auto-sync imported data to Cloud Firestore:', cloudErr);
                 }
               }
+
+              setAlertDialog({
+                isOpen: true,
+                title: 'Sucesso',
+                message: 'Backup importado, normalizado e restaurado com sucesso tanto localmente quanto na nuvem!',
+                onClose: () => {
+                  window.location.reload();
+                }
+              });
+            } catch (innerErr) {
+              console.error('DB restoration error:', innerErr);
+              setAlertDialog({
+                isOpen: true,
+                title: 'Erro',
+                message: 'Erro ao gravar os dados restaurados no banco de dados local.'
+              });
             } finally {
               setCloudSyncDisabled(false);
             }
-
-            setConfirmDialog(null);
-            setAlertDialog({
-              isOpen: true,
-              title: 'Sucesso',
-              message: 'Backup importado, normalizado e restaurado com sucesso tanto localmente quanto na nuvem!',
-              onClose: () => {
-                window.location.reload();
-              }
-            });
-          } catch (err) {
-            console.error('Import error:', err);
-            setConfirmDialog(null);
-            setAlertDialog({
-              isOpen: true,
-              title: 'Erro',
-              message: 'Erro ao processar o arquivo JSON de backup. Certifique-se de que é um backup válido.'
-            });
           }
-        };
-        reader.readAsText(file);
+        });
+      } catch (err) {
+        console.error('Import parse error:', err);
+        setAlertDialog({
+          isOpen: true,
+          title: 'Erro',
+          message: 'Erro ao processar o arquivo JSON de backup. Certifique-se de que é um backup válido.'
+        });
       }
-    });
+    };
 
+    reader.readAsText(file);
     e.target.value = '';
   };
 

@@ -403,7 +403,7 @@ export async function getGlobalSchools(): Promise<GlobalSchool[]> {
   if (!dbInstance) return [];
   try {
     const colRef = collection(dbInstance, 'global_schools');
-    const snapshot = await getDocs(colRef);
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
     const schools: GlobalSchool[] = [];
     snapshot.forEach((doc) => {
       schools.push({ ...doc.data() as GlobalSchool, id: doc.id });
@@ -433,7 +433,7 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
     await deleteDoc(doc(dbInstance, 'global_schools', schoolId));
 
     const classesCol = collection(dbInstance, 'global_classes');
-    const classesSnapshot = await getDocs(classesCol);
+    const classesSnapshot = await withTimeout(getDocs(classesCol), 4000);
     for (const d of classesSnapshot.docs) {
       const clsData = d.data();
       if (clsData.schoolId === schoolId) {
@@ -450,7 +450,7 @@ export async function getGlobalClasses(): Promise<GlobalClass[]> {
   if (!dbInstance) return [];
   try {
     const colRef = collection(dbInstance, 'global_classes');
-    const snapshot = await getDocs(colRef);
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
     const classes: GlobalClass[] = [];
     snapshot.forEach((doc) => {
       classes.push({ ...doc.data() as GlobalClass, id: doc.id });
@@ -480,7 +480,7 @@ export async function deleteGlobalClass(classId: string): Promise<void> {
     await deleteDoc(doc(dbInstance, 'global_classes', classId));
 
     const studentsCol = collection(dbInstance, 'global_students');
-    const studentsSnapshot = await getDocs(studentsCol);
+    const studentsSnapshot = await withTimeout(getDocs(studentsCol), 4000);
     for (const d of studentsSnapshot.docs) {
       const studData = d.data();
       if (studData.classId === classId) {
@@ -497,7 +497,7 @@ export async function getGlobalStudents(): Promise<GlobalStudent[]> {
   if (!dbInstance) return [];
   try {
     const colRef = collection(dbInstance, 'global_students');
-    const snapshot = await getDocs(colRef);
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
     const students: GlobalStudent[] = [];
     snapshot.forEach((doc) => {
       students.push({ ...doc.data() as GlobalStudent, id: doc.id });
@@ -550,7 +550,7 @@ export async function getGlobalSubjects(): Promise<GlobalSubject[]> {
   if (!dbInstance) return [];
   try {
     const colRef = collection(dbInstance, 'global_subjects');
-    const snapshot = await getDocs(colRef);
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
     const subjects: GlobalSubject[] = [];
     snapshot.forEach((doc) => {
       subjects.push({ ...doc.data() as GlobalSubject, id: doc.id });
@@ -581,7 +581,7 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
     
     // Also cascade delete workloads associated with this subject
     const workloadsCol = collection(dbInstance, 'global_workloads');
-    const workloadsSnapshot = await getDocs(workloadsCol);
+    const workloadsSnapshot = await withTimeout(getDocs(workloadsCol), 4000);
     for (const d of workloadsSnapshot.docs) {
       const wlData = d.data();
       if (wlData.subjectId === subjectId) {
@@ -598,7 +598,7 @@ export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
   if (!dbInstance) return [];
   try {
     const colRef = collection(dbInstance, 'global_workloads');
-    const snapshot = await getDocs(colRef);
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
     const workloads: GlobalWorkload[] = [];
     snapshot.forEach((doc) => {
       workloads.push({ ...doc.data() as GlobalWorkload, id: doc.id });
@@ -643,7 +643,7 @@ export async function getGradesBackup(professors: { username: string; teacherNam
       const userLower = prof.username.toLowerCase();
       // Fetch bimonthly grades
       const bimonthlyRef = collection(dbInstance, `diaries/${userLower}/bimonthlyGrades`);
-      const bimonthlySnapshot = await getDocs(bimonthlyRef);
+      const bimonthlySnapshot = await withTimeout(getDocs(bimonthlyRef), 4000);
       bimonthlySnapshot.forEach((doc) => {
         allGrades.push({
           professor: prof.username,
@@ -656,7 +656,7 @@ export async function getGradesBackup(professors: { username: string; teacherNam
 
       // Fetch extra grades
       const extraRef = collection(dbInstance, `diaries/${userLower}/extraGrades`);
-      const extraSnapshot = await getDocs(extraRef);
+      const extraSnapshot = await withTimeout(getDocs(extraRef), 4000);
       extraSnapshot.forEach((doc) => {
         allGrades.push({
           professor: prof.username,

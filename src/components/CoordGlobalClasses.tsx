@@ -83,9 +83,11 @@ export default function CoordGlobalClasses() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const schs = await getGlobalSchools();
-      const cls = await getGlobalClasses();
-      const stds = await getGlobalStudents();
+      const [schs, cls, stds] = await Promise.all([
+        getGlobalSchools(),
+        getGlobalClasses(),
+        getGlobalStudents()
+      ]);
       setSchools(schs);
       setClasses(cls);
       setStudents(stds);
