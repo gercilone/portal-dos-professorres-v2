@@ -431,7 +431,7 @@ export default function TabDAttendance({
               Nenhum horário cadastrado nas configurações.
             </p>
           ) : (
-            <div className="space-y-1.5 pr-1">
+            <div className="space-y-3 pr-1">
               {weeklySchedules
                 .filter(s => s.dayOfWeek === getTodayDayOfWeek())
                 .map((sched) => {
@@ -439,6 +439,7 @@ export default function TabDAttendance({
                   const cls = classesList.find(c => c.id === sched.classId);
                   const sub = subjectsList.find(s => s.id === sched.subjectId);
                   const isCurrent = sched.schoolId === schoolId && sched.classId === classId && sched.subjectId === subjectId;
+                  const schoolColors = getSchoolColorClasses(sched.schoolId);
 
                   return (
                     <button
@@ -446,23 +447,49 @@ export default function TabDAttendance({
                       type="button"
                       onClick={() => handleSelectSchedule(sched)}
                       disabled={isCurrent}
-                      className={`w-full text-left p-2.5 rounded-xl text-xs flex items-center justify-between gap-2 border transition cursor-pointer ${
+                      className={`w-full text-left p-4 rounded-2xl border transition-all duration-200 cursor-pointer flex items-center justify-between gap-3 group relative overflow-hidden ${
                         isCurrent
-                          ? 'bg-emerald-950/20 border-emerald-500/25 text-emerald-400 font-semibold'
-                          : 'bg-zinc-950 hover:bg-zinc-900 border-zinc-850 text-zinc-300 hover:text-white'
+                          ? `ring-2 ring-emerald-500 ring-offset-2 ring-offset-zinc-950 ${schoolColors.bg} ${schoolColors.border}`
+                          : `${schoolColors.bg} ${schoolColors.border} hover:bg-opacity-90 hover:scale-[1.01] hover:shadow-lg hover:shadow-black/10`
                       }`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1 text-[9px] text-zinc-500">
-                          <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
-                          <span className="font-mono font-bold">{sched.timeSlot}</span>
-                          {isCurrent && <span className="bg-emerald-500/10 px-1 py-0.2 rounded text-[8px] text-emerald-400 font-bold shrink-0">Ativo</span>}
+                      {/* Active or School Indicator */}
+                      <div className={`absolute top-0 left-0 w-1.5 h-full ${isCurrent ? 'bg-emerald-500' : schoolColors.accentColor}`}></div>
+                      
+                      <div className="space-y-1.5 flex-1 min-w-0 pl-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-zinc-100 text-[11px] tracking-tight bg-zinc-950/85 px-2.5 py-1 rounded-lg border border-zinc-850">
+                            {sched.timeSlot}
+                          </span>
+                          <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md border ${schoolColors.badgeBg} ${schoolColors.badgeText} ${schoolColors.badgeBorder}`}>
+                            {sch?.name || 'Escola não encontrada'}
+                          </span>
+                          {isCurrent && (
+                            <span className="bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-extrabold px-2.5 py-0.5 rounded-md text-emerald-400 uppercase tracking-wider animate-pulse flex items-center gap-1">
+                              <span className="w-1 h-1 bg-emerald-500 rounded-full"></span>
+                              Ativo
+                            </span>
+                          )}
                         </div>
-                        <p className="font-bold text-xs truncate">{sub?.name || 'Sem Disciplina'}</p>
-                        <p className="text-[10px] text-zinc-400 truncate">{cls?.name || 'Sem Turma'}</p>
+                        <div className="flex items-baseline gap-2 flex-wrap pt-0.5">
+                          <span className="text-base font-extrabold text-zinc-200">
+                            {cls?.name || 'Sem turma'}
+                          </span>
+                          <span className="text-zinc-500 text-xs">•</span>
+                          <span className="text-xs text-zinc-400 font-bold">
+                            {sub?.name || 'Sem disciplina'}
+                          </span>
+                        </div>
                       </div>
-                      {!isCurrent && (
-                        <ArrowRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                      
+                      {!isCurrent ? (
+                        <div className="bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 group-hover:bg-zinc-900 transition-all shrink-0">
+                          <ArrowRight className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 shrink-0 text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
                       )}
                     </button>
                   );
