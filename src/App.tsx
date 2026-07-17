@@ -271,6 +271,7 @@ export default function App() {
     localStorage.removeItem('portal_password_hint');
     localStorage.removeItem('portal_security_question');
     localStorage.removeItem('portal_security_answer');
+    localStorage.removeItem('portal_initial_sync_done');
     
     // Clear IndexedDB local database tables on logout
     try {
@@ -416,6 +417,7 @@ export default function App() {
           const pullSuccess = await pullTeacherDataFromCloud(matchingProf.username, db);
           
           if (pullSuccess) {
+            localStorage.setItem('portal_initial_sync_done', 'true');
             // Seed default demo data ONLY if this is a completely blank account in cloud AND it's the default demo 'professor'
             const schoolCount = await db.schools.count();
             if (schoolCount === 0 && matchingProf.username.toLowerCase() === 'professor') {
@@ -926,13 +928,18 @@ export default function App() {
           try {
             const schoolCount = await db.schools.count();
             const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
-            const shouldPull = inspecting ? needsInspectPull : (schoolCount === 0 || forcePull);
+            const initialSyncDone = localStorage.getItem('portal_initial_sync_done') === 'true';
+            const shouldPull = inspecting ? needsInspectPull : ((schoolCount === 0 && !initialSyncDone) || forcePull);
 
             if (shouldPull) {
               setIsInitialSyncing(true);
               setSyncStatusMessage(`Sincronizando com a Nuvem... Buscando diário de classe de @${activeUser}...`);
               
               const pullSuccess = await pullTeacherDataFromCloud(activeUser, db);
+
+              if (pullSuccess) {
+                localStorage.setItem('portal_initial_sync_done', 'true');
+              }
 
               if (forcePull) {
                 localStorage.removeItem('portal_force_cloud_pull');

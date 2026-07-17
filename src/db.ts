@@ -128,6 +128,11 @@ export async function seedDatabase() {
     if (localStorage.getItem('portal_skip_seed') === 'true') {
       return;
     }
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (activeUser && activeUser.toLowerCase() !== 'professor') {
+      localStorage.setItem('portal_skip_seed', 'true');
+      return;
+    }
     const schoolCount = await db.schools.count();
     if (schoolCount > 0) return;
 

@@ -98,6 +98,24 @@ export function isCloudFallback(): boolean {
   return localStorage.getItem('portal_cloud_fallback') === 'true';
 }
 
+// Helper to handle Firestore quota or writing errors and automatically trigger local fallback
+export function handleFirestoreError(error: any) {
+  if (!error) return;
+  const errMsg = String(error?.message || error || '').toLowerCase();
+  const errCode = String(error?.code || '').toLowerCase();
+  if (
+    errMsg.includes('quota') ||
+    errMsg.includes('resource-exhausted') ||
+    errCode.includes('resource-exhausted') ||
+    errMsg.includes('exceeded') ||
+    errMsg.includes('quota limit exceeded')
+  ) {
+    console.warn('Firestore Quota/Resource Exceeded detected. Activating offline contingency mode.');
+    localStorage.setItem('portal_cloud_fallback', 'true');
+    window.dispatchEvent(new Event('storage'));
+  }
+}
+
 // 1. PROFESSORS PROFILES SYNC (Cloud Database Shared Registry)
 export async function syncProfessorsListInCloud() {
   if (isCloudFallback()) {
@@ -357,6 +375,7 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any): Pr
     return true;
   } catch (error) {
     console.error(`Error pushing diary data for ${username}:`, error);
+    handleFirestoreError(error);
     return false;
   }
 }
@@ -387,6 +406,7 @@ export async function syncSingleRecord(
     }
   } catch (error) {
     console.error(`Error syncing single record on ${tableName}:`, error);
+    handleFirestoreError(error);
   }
 }
 

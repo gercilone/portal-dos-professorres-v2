@@ -440,9 +440,19 @@ export default function TabFSettings({
   // ACTIONS: CRUD Schools
   const handleAddSchool = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newSchoolName.trim()) return;
+    const nameTrimmed = newSchoolName.trim();
+    if (!nameTrimmed) return;
     try {
-      await db.schools.add({ name: newSchoolName.trim() });
+      const existing = await db.schools.where('name').equalsIgnoreCase(nameTrimmed).first();
+      if (existing) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Escola já cadastrada',
+          message: `Já existe uma escola cadastrada com o nome "${nameTrimmed}".`
+        });
+        return;
+      }
+      await db.schools.add({ name: nameTrimmed });
       setNewSchoolName('');
     } catch (err) {
       console.error(err);
@@ -473,6 +483,7 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         try {
+          setCloudSyncDisabled(true);
           await db.transaction('rw', [
             db.schools, db.classes, db.students, db.bimonthlyGrades,
             db.attendance, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads
@@ -504,8 +515,17 @@ export default function TabFSettings({
               await db.subjectWorkloads.where({ classId: c.id! }).delete();
             }
           });
+          
+          setCloudSyncDisabled(false);
+
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
           setConfirmDialog(null);
         } catch (err) {
+          setCloudSyncDisabled(false);
           console.error(err);
           setConfirmDialog(null);
         }
@@ -516,9 +536,20 @@ export default function TabFSettings({
   // ACTIONS: CRUD Classes
   const handleAddClass = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newClassName.trim() || !selectedSchoolIdForClass) return;
+    const nameTrimmed = newClassName.trim();
+    if (!nameTrimmed || !selectedSchoolIdForClass) return;
     try {
-      await db.classes.add({ name: newClassName.trim(), schoolId: selectedSchoolIdForClass });
+      const existing = await db.classes.where({ schoolId: selectedSchoolIdForClass }).toArray();
+      const duplicate = existing.find(c => c.name.trim().toLowerCase() === nameTrimmed.toLowerCase());
+      if (duplicate) {
+        setAlertDialog({
+          isOpen: true,
+          title: 'Turma já cadastrada',
+          message: `Já existe uma turma cadastrada com o nome "${nameTrimmed}" nesta escola.`
+        });
+        return;
+      }
+      await db.classes.add({ name: nameTrimmed, schoolId: selectedSchoolIdForClass });
       setNewClassName('');
     } catch (err) {
       console.error(err);
@@ -553,6 +584,7 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         try {
+          setCloudSyncDisabled(true);
           await db.transaction('rw', [
             db.classes, db.students, db.bimonthlyGrades, db.attendance,
             db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads
@@ -572,8 +604,17 @@ export default function TabFSettings({
             await db.weeklySchedule.where({ classId: id }).delete();
             await db.subjectWorkloads.where({ classId: id }).delete();
           });
+
+          setCloudSyncDisabled(false);
+
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
           setConfirmDialog(null);
         } catch (err) {
+          setCloudSyncDisabled(false);
           console.error(err);
           setConfirmDialog(null);
         }
@@ -617,6 +658,7 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         try {
+          setCloudSyncDisabled(true);
           await db.transaction('rw', [
             db.subjects, db.bimonthlyGrades, db.attendance, db.vistoColumns, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads
           ], async () => {
@@ -635,8 +677,17 @@ export default function TabFSettings({
             await db.weeklySchedule.where({ subjectId: id }).delete();
             await db.subjectWorkloads.where({ subjectId: id }).delete();
           });
+
+          setCloudSyncDisabled(false);
+
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
           setConfirmDialog(null);
         } catch (err) {
+          setCloudSyncDisabled(false);
           console.error(err);
           setConfirmDialog(null);
         }
@@ -722,14 +773,24 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         try {
+          setCloudSyncDisabled(true);
           await db.students.delete(id);
           await db.bimonthlyGrades.where({ studentId: id }).delete();
           await db.attendance.where({ studentId: id }).delete();
           await db.studentVistos.where({ studentId: id }).delete();
           await db.vistoRankingScores.where({ studentId: id }).delete();
           await db.extraGrades.where({ studentId: id }).delete();
+          
+          setCloudSyncDisabled(false);
+
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
           setConfirmDialog(null);
         } catch (err) {
+          setCloudSyncDisabled(false);
           console.error(err);
           setConfirmDialog(null);
         }
@@ -1665,84 +1726,164 @@ export default function TabFSettings({
     setConfirmDialog({
       isOpen: true,
       title: 'Limpar Escolas de Exemplo e Duplicadas',
-      message: 'Esta ação irá apagar definitivamente as escolas de exemplo ("Escola Estadual Cora Coralina" e "Colégio Integral Anglo") e também resolverá qualquer duplicidade de escolas com o mesmo nome (mantendo apenas uma). Seus dados serão atualizados localmente e na nuvem. Deseja continuar?',
+      message: 'Esta ação irá apagar definitivamente as escolas de exemplo ("Escola Estadual Cora Coralina" e "Colégio Integral Anglo") e também resolverá qualquer duplicidade de escolas com o mesmo nome, unificando seus dados com segurança (sem perda de turmas ou alunos). Seus dados serão atualizados localmente e na nuvem. Deseja continuar?',
       confirmText: 'Limpar e Sincronizar',
       cancelText: 'Cancelar',
       onConfirm: async () => {
         setConfirmDialog(null);
         try {
-          const allSchools = await db.schools.toArray();
-          const exampleNames = ['escola estadual cora coralina', 'colégio integral anglo'];
-          
-          // Group schools by lowercased name
-          const groupedByName: { [name: string]: School[] } = {};
-          for (const sch of allSchools) {
-            const normalizedName = sch.name.trim().toLowerCase();
-            if (!groupedByName[normalizedName]) {
-              groupedByName[normalizedName] = [];
-            }
-            groupedByName[normalizedName].push(sch);
-          }
+          // Set skip seed to true so it never seeds again for this user session
+          localStorage.setItem('portal_skip_seed', 'true');
 
-          const schoolIdsToDelete = new Set<number>();
-
-          for (const name of Object.keys(groupedByName)) {
-            const list = groupedByName[name];
-            // If it is an example school, delete ALL of them
-            if (exampleNames.includes(name)) {
-              for (const sch of list) {
-                if (sch.id) schoolIdsToDelete.add(sch.id);
-              }
-            } else {
-              // For other schools, if there are duplicates, keep the oldest one (with the lowest ID) and delete the rest
-              if (list.length > 1) {
-                list.sort((a, b) => (a.id || 0) - (b.id || 0));
-                for (let i = 1; i < list.length; i++) {
-                  const sch = list[i];
-                  if (sch.id) schoolIdsToDelete.add(sch.id);
+          setCloudSyncDisabled(true);
+          try {
+            // Execute cascading deletions and merges inside a transaction
+            await db.transaction('rw', [
+              db.schools, db.classes, db.students, db.bimonthlyGrades,
+              db.attendance, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads,
+              db.assignmentDescriptions, db.lessons, db.vistoColumns, db.subjects
+            ], async () => {
+              // First: Delete example schools and ALL their cascading contents
+              const exampleNames = ['escola estadual cora coralina', 'colégio integral anglo'];
+              const allSchools = await db.schools.toArray();
+              
+              for (const sch of allSchools) {
+                const nameLower = sch.name.trim().toLowerCase();
+                if (exampleNames.includes(nameLower)) {
+                  const schId = sch.id!;
+                  await db.schools.delete(schId);
+                  
+                  // Cascade delete for example school
+                  const relatedClasses = await db.classes.where({ schoolId: schId }).toArray();
+                  for (const c of relatedClasses) {
+                    await db.classes.delete(c.id!);
+                    
+                    const relatedStudents = await db.students.where({ classId: c.id! }).toArray();
+                    for (const s of relatedStudents) {
+                      await db.students.delete(s.id!);
+                      await db.bimonthlyGrades.where({ studentId: s.id! }).delete();
+                      await db.attendance.where({ studentId: s.id! }).delete();
+                      await db.studentVistos.where({ studentId: s.id! }).delete();
+                      await db.vistoRankingScores.where({ studentId: s.id! }).delete();
+                      await db.extraGrades.where({ studentId: s.id! }).delete();
+                    }
+                    await db.weeklySchedule.where({ classId: c.id! }).delete();
+                    await db.subjectWorkloads.where({ classId: c.id! }).delete();
+                    await db.assignmentDescriptions.where({ classId: c.id! }).delete();
+                    await db.lessons.where({ classId: c.id! }).delete();
+                    await db.vistoColumns.where({ classId: c.id! }).delete();
+                  }
+                  await db.weeklySchedule.where({ schoolId: schId }).delete();
                 }
               }
-            }
-          }
 
-          if (schoolIdsToDelete.size === 0) {
-            setAlertDialog({
-              isOpen: true,
-              title: 'Tudo Limpo!',
-              message: 'Nenhuma escola de exemplo ou escola duplicada foi encontrada no seu diário local.'
+              // Second: Merge duplicate schools that have the same name (excluding example schools)
+              const remainingSchools = await db.schools.toArray();
+              const groupedByName: { [name: string]: School[] } = {};
+              for (const sch of remainingSchools) {
+                const normalizedName = sch.name.trim().toLowerCase();
+                if (!groupedByName[normalizedName]) {
+                  groupedByName[normalizedName] = [];
+                }
+                groupedByName[normalizedName].push(sch);
+              }
+
+              for (const name of Object.keys(groupedByName)) {
+                const list = groupedByName[name];
+                if (list.length > 1) {
+                  // Sort by ID to keep the oldest one (lowest ID)
+                  list.sort((a, b) => (a.id || 0) - (b.id || 0));
+                  const keptSchool = list[0];
+                  const keptSchoolId = keptSchool.id!;
+
+                  // Merge all other duplicate schools into keptSchool
+                  for (let i = 1; i < list.length; i++) {
+                    const dupSchool = list[i];
+                    const dupSchoolId = dupSchool.id!;
+
+                    // Get all classes in duplicate school
+                    const dupClasses = await db.classes.where({ schoolId: dupSchoolId }).toArray();
+                    
+                    // Get existing classes in kept school to check for class name duplicates
+                    const keptClasses = await db.classes.where({ schoolId: keptSchoolId }).toArray();
+
+                    for (const dupClass of dupClasses) {
+                      const dupClassNameLower = dupClass.name.trim().toLowerCase();
+                      const matchingKeptClass = keptClasses.find(c => c.name.trim().toLowerCase() === dupClassNameLower);
+
+                      if (matchingKeptClass) {
+                        // We have a class duplicate! Merge duplicate class into matchingKeptClass
+                        const keptClassId = matchingKeptClass.id!;
+                        const dupClassId = dupClass.id!;
+
+                        // Move students
+                        const studentsToMove = await db.students.where({ classId: dupClassId }).toArray();
+                        for (const s of studentsToMove) {
+                          await db.students.update(s.id!, { classId: keptClassId });
+                        }
+
+                        // Move workloads
+                        const workloadsToMove = await db.subjectWorkloads.where({ classId: dupClassId }).toArray();
+                        for (const wl of workloadsToMove) {
+                          // Check if workload already exists in kept class for same subject
+                          const existingWl = await db.subjectWorkloads.where({ classId: keptClassId, subjectId: wl.subjectId }).first();
+                          if (existingWl) {
+                            await db.subjectWorkloads.delete(wl.id!);
+                          } else {
+                            await db.subjectWorkloads.update(wl.id!, { classId: keptClassId });
+                          }
+                        }
+
+                        // Move schedules
+                        const schedulesToMove = await db.weeklySchedule.where({ classId: dupClassId }).toArray();
+                        for (const sch of schedulesToMove) {
+                          await db.weeklySchedule.update(sch.id!, { classId: keptClassId, schoolId: keptSchoolId });
+                        }
+
+                        // Move assignment descriptions
+                        const assignmentsToMove = await db.assignmentDescriptions.where({ classId: dupClassId }).toArray();
+                        for (const ass of assignmentsToMove) {
+                          await db.assignmentDescriptions.update(ass.id!, { classId: keptClassId });
+                        }
+
+                        // Move lessons
+                        const lessonsToMove = await db.lessons.where({ classId: dupClassId }).toArray();
+                        for (const les of lessonsToMove) {
+                          await db.lessons.update(les.id!, { classId: keptClassId });
+                        }
+
+                        // Move visto columns
+                        const vistoColsToMove = await db.vistoColumns.where({ classId: dupClassId }).toArray();
+                        for (const vc of vistoColsToMove) {
+                          await db.vistoColumns.update(vc.id!, { classId: keptClassId });
+                        }
+
+                        // Finally delete duplicate class
+                        await db.classes.delete(dupClassId);
+
+                      } else {
+                        // No duplicate class name, just move the class to the kept school!
+                        await db.classes.update(dupClass.id!, { schoolId: keptSchoolId });
+                        // Update weekly schedules for this class to point to keptSchoolId
+                        const schedulesToMove = await db.weeklySchedule.where({ classId: dupClass.id! }).toArray();
+                        for (const sch of schedulesToMove) {
+                          await db.weeklySchedule.update(sch.id!, { schoolId: keptSchoolId });
+                        }
+                      }
+                    }
+
+                    // Delete weekly schedules directly tied to dupSchoolId (not class schedules)
+                    await db.weeklySchedule.where({ schoolId: dupSchoolId }).delete();
+
+                    // Finally delete duplicate school
+                    await db.schools.delete(dupSchoolId);
+                  }
+                }
+              }
             });
-            return;
+          } finally {
+            setCloudSyncDisabled(false);
           }
-
-          // Execute cascading deletions inside a transaction
-          await db.transaction('rw', [
-            db.schools, db.classes, db.students, db.bimonthlyGrades,
-            db.attendance, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads
-          ], async () => {
-            for (const schId of schoolIdsToDelete) {
-              await db.schools.delete(schId);
-              
-              const relatedClasses = await db.classes.where({ schoolId: schId }).toArray();
-              for (const c of relatedClasses) {
-                await db.classes.delete(c.id!);
-                
-                const relatedStudents = await db.students.where({ classId: c.id! }).toArray();
-                for (const s of relatedStudents) {
-                  await db.students.delete(s.id!);
-                  await db.bimonthlyGrades.where({ studentId: s.id! }).delete();
-                  await db.attendance.where({ studentId: s.id! }).delete();
-                  await db.studentVistos.where({ studentId: s.id! }).delete();
-                  await db.vistoRankingScores.where({ studentId: s.id! }).delete();
-                  await db.extraGrades.where({ studentId: s.id! }).delete();
-                }
-              }
-              
-              await db.weeklySchedule.where({ schoolId: schId }).delete();
-              for (const c of relatedClasses) {
-                await db.subjectWorkloads.where({ classId: c.id! }).delete();
-              }
-            }
-          });
 
           // Sync changes immediately with the cloud (this will perform physical deletes in Firestore)
           const activeUser = localStorage.getItem('portal_active_user');
@@ -1753,7 +1894,7 @@ export default function TabFSettings({
           setAlertDialog({
             isOpen: true,
             title: 'Limpeza Concluída!',
-            message: 'As escolas de exemplo e duplicadas foram excluídas com sucesso localmente e na nuvem!',
+            message: 'As escolas de exemplo e duplicidades foram limpas e consolidadas com sucesso localmente e na nuvem!',
             onClose: () => {
               window.location.reload();
             }
