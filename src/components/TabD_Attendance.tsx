@@ -549,12 +549,24 @@ export default function TabDAttendance({
                 <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Chamada Inteligente
               </h3>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Atribua faltas clicando no número correspondente para a aula de hoje
+                Atribua faltas clicando no número correspondente para a aula do dia selecionado
               </p>
             </div>
 
-            <div className="text-xs text-zinc-500 bg-zinc-950 px-2.5 py-1.5 rounded-lg font-mono">
-              Data: {selectedDate.split('-').reverse().join('/')}
+            <div className="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800 focus-within:border-zinc-700 transition">
+              <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Data da Chamada:</span>
+              <input
+                id="attendance-date-select-header"
+                type="date"
+                disabled={isReadOnly}
+                value={selectedDate}
+                onChange={(e) => {
+                  setSelectedDate(e.target.value);
+                  setIsSaved(false);
+                }}
+                className="bg-transparent border-none text-zinc-300 font-bold font-mono text-xs focus:ring-0 p-0 cursor-pointer w-[115px] focus:outline-none"
+                style={{ colorScheme: 'dark' }}
+              />
             </div>
           </div>
 

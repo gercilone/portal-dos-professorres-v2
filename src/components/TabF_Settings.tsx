@@ -371,8 +371,10 @@ export default function TabFSettings({
         localClassId = await db.classes.add({ name: cls.name, schoolId: localSchoolId });
       }
 
-      // 4. Get global students of this global class
-      const classStudents = globalStudents.filter(st => st.classId === cls.id);
+      // 4. Get global students of this global class (pull fresh list from cloud!)
+      const freshGlobalStudents = await getGlobalStudents();
+      setGlobalStudents(freshGlobalStudents);
+      const classStudents = freshGlobalStudents.filter(st => st.classId === cls.id);
 
       // 5. Add them to the local database, preventing duplicates by name
       let addedCount = 0;
@@ -3692,9 +3694,20 @@ export default function TabFSettings({
 
                               <div className="shrink-0 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
                                 {isAttached ? (
-                                  <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 select-none">
-                                    <Check className="w-3 h-3" /> Vinculada
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 select-none">
+                                      <Check className="w-3 h-3" /> Vinculada
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={attachingClassId === cls.id}
+                                      onClick={() => handleAttachGlobalClass(cls)}
+                                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-750 text-zinc-350 hover:text-zinc-200 text-[10px] font-bold rounded-lg border border-zinc-700 hover:border-zinc-650 transition shrink-0 cursor-pointer"
+                                      title="Atualizar lista de alunos e cargas horárias desta turma com a nuvem"
+                                    >
+                                      {attachingClassId === cls.id ? 'Sincronizando...' : 'Sincronizar'}
+                                    </button>
+                                  </div>
                                 ) : (
                                   <button
                                     type="button"

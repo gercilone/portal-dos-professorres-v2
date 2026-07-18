@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, BimonthlyGrade, AssignmentDescription, ExtraGrade } from '../types';
-import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload } from 'lucide-react';
+import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload, Sparkles } from 'lucide-react';
 import { pushTeacherDataToCloud } from '../firebase';
 
 interface TabAGradesProps {
@@ -17,6 +17,12 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   const [subTab, setSubTab] = useState<'bimonthly' | 'semester'>('bimonthly');
   const [editingDesc, setEditingDesc] = useState(false);
   const [tempDesc, setTempDesc] = useState({ t1: '', t2: '', t3: '', t4: '', t5: '' });
+
+  // Bulk Fill States
+  const [bulkFillOpen, setBulkFillOpen] = useState(false);
+  const [bulkSelectedField, setBulkSelectedField] = useState<'t1' | 't2' | 't3' | 't4' | 't5' | 'exam'>('t1');
+  const [bulkGradeValue, setBulkGradeValue] = useState('');
+  const [bulkTarget, setBulkTarget] = useState<'all' | 'empty'>('all');
 
   // Dialog States
   const [alertDialog, setAlertDialog] = useState<{
@@ -173,6 +179,71 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
       }
     } catch (err) {
       console.error('Error saving extra grade:', err);
+    }
+  };
+
+  // HANDLE BULK FILL GRADES
+  const handleBulkFill = async () => {
+    const trimmedVal = bulkGradeValue.trim();
+    const value = trimmedVal === '' ? undefined : parseFloat(trimmedVal.replace(',', '.'));
+    
+    if (trimmedVal !== '' && (value === undefined || isNaN(value) || value < 0 || value > 10)) {
+      setAlertDialog({
+        isOpen: true,
+        title: 'Valor Inválido',
+        message: 'A nota deve ser um número entre 0 e 10, ou deixe em branco para apagar.'
+      });
+      return;
+    }
+
+    if (!classId || !subjectId) return;
+
+    try {
+      await db.transaction('rw', [db.bimonthlyGrades], async () => {
+        for (const student of students) {
+          const studentId = student.id!;
+          const existingGrade = grades.find((g) => g.studentId === studentId);
+          
+          const currentVal = existingGrade ? existingGrade[bulkSelectedField] : undefined;
+          
+          // Check target condition
+          if (bulkTarget === 'empty' && currentVal !== undefined) {
+            continue; // Skip because it's not empty
+          }
+
+          if (existingGrade) {
+            await db.bimonthlyGrades.update(existingGrade.id!, { [bulkSelectedField]: value });
+          } else {
+            await db.bimonthlyGrades.add({
+              studentId,
+              bimonthly,
+              subjectId,
+              [bulkSelectedField]: value
+            });
+          }
+        }
+      });
+
+      // Synchronize with cloud if logged in
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser) {
+        await pushTeacherDataToCloud(activeUser, db);
+      }
+
+      setBulkFillOpen(false);
+      setBulkGradeValue('');
+      setAlertDialog({
+        isOpen: true,
+        title: 'Lançamento Concluído',
+        message: `As notas para a atividade selecionada foram preenchidas em lote com sucesso!`
+      });
+    } catch (err) {
+      console.error('Error during bulk grade fill:', err);
+      setAlertDialog({
+        isOpen: true,
+        title: 'Erro',
+        message: 'Ocorreu um erro ao realizar o lançamento em lote.'
+      });
     }
   };
 
@@ -605,11 +676,27 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
 
                 <button
                   id="edit-descriptors-btn"
-                  onClick={() => setEditingDesc(!editingDesc)}
+                  onClick={() => {
+                    setEditingDesc(!editingDesc);
+                    setBulkFillOpen(false);
+                  }}
                   className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-750 transition cursor-pointer"
                 >
                   <Edit2 className="w-3.5 h-3.5 text-blue-400" />
                   {editingDesc ? 'Fechar Editor' : 'Atividades (T1-T5)'}
+                </button>
+
+                <button
+                  id="bulk-fill-btn"
+                  onClick={() => {
+                    setBulkFillOpen(!bulkFillOpen);
+                    setEditingDesc(false);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-850 hover:bg-zinc-750 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-700 transition cursor-pointer hover:border-zinc-500 shadow-sm"
+                  title="Lançamento rápido e preenchimento em lote das notas do bimestre"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Lançar em Lote (Rápido)
                 </button>
               </div>
             )}
@@ -653,6 +740,91 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                   <Save className="w-3.5 h-3.5" />
                   Salvar Títulos
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Collapsible Bulk Fill Form */}
+          {bulkFillOpen && (
+            <div id="bulk-fill-form-panel" className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl space-y-4 shadow-inner animate-in fade-in zoom-in-95 duration-150">
+              <div>
+                <h4 className="text-zinc-200 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  Lançamento Rápido de Notas em Lote
+                </h4>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Preencha notas para toda a turma de uma só vez. Escolha a atividade, o valor e o público-alvo:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                {/* 1. Selecionar Atividade */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-zinc-400 block">Atividade / Coluna</label>
+                  <select
+                    id="bulk-fill-field-select"
+                    value={bulkSelectedField}
+                    onChange={(e) => setBulkSelectedField(e.target.value as any)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    <option value="t1">T1 - {t1Label}</option>
+                    <option value="t2">T2 - {t2Label}</option>
+                    <option value="t3">T3 - {t3Label}</option>
+                    <option value="t4">T4 - {t4Label}</option>
+                    <option value="t5">T5 - {t5Label}</option>
+                    <option value="exam">Prova - Avaliação Bimestral</option>
+                  </select>
+                </div>
+
+                {/* 2. Nota a Ser Atribuída */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-zinc-400 block">Nota (0 a 10)</label>
+                  <input
+                    id="bulk-fill-grade-input"
+                    type="text"
+                    value={bulkGradeValue}
+                    onChange={(e) => setBulkGradeValue(e.target.value)}
+                    placeholder="Ex: 8.5 (ou vazio para apagar)"
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none font-mono"
+                  />
+                </div>
+
+                {/* 3. Alunos Alvo */}
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-zinc-400 block">Público-Alvo</label>
+                  <select
+                    id="bulk-fill-target-select"
+                    value={bulkTarget}
+                    onChange={(e) => setBulkTarget(e.target.value as any)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer"
+                    style={{ colorScheme: 'dark' }}
+                  >
+                    <option value="all">Todos os Alunos da Turma</option>
+                    <option value="empty">Apenas Alunos Sem Nota (Em Branco)</option>
+                  </select>
+                </div>
+
+                {/* 4. Ações */}
+                <div className="flex items-end gap-2">
+                  <button
+                    id="apply-bulk-fill-btn"
+                    type="button"
+                    onClick={handleBulkFill}
+                    className="flex-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg font-semibold flex items-center justify-center gap-1 shadow transition cursor-pointer h-[34px]"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    Aplicar em Lote
+                  </button>
+                  <button
+                    id="cancel-bulk-fill-btn"
+                    type="button"
+                    onClick={() => setBulkFillOpen(false)}
+                    className="px-3 py-1.5 hover:bg-zinc-800 text-zinc-400 text-xs rounded-lg font-medium transition h-[34px] border border-transparent hover:border-zinc-750"
+                  >
+                    Cancelar
+                  </button>
+                </div>
               </div>
             </div>
           )}
