@@ -564,11 +564,11 @@ export default function CoordGlobalSubjects() {
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                  <p className="text-xs text-zinc-400 font-extrabold uppercase tracking-wider">
                     Cargas e Atribuições Ativas ({filteredSchoolWorkloads.length}):
                   </p>
                   
-                  <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                  <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
                     {filteredSchoolWorkloads.map((wl) => {
                       const associatedSubject = subjects.find(s => s.id === wl.subjectId);
                       const associatedClass = classes.find(c => c.id === wl.classId);
@@ -576,50 +576,50 @@ export default function CoordGlobalSubjects() {
                       const isEditingThis = editingWorkloadId === wl.id;
                       
                       return (
-                        <div key={wl.id} className="bg-zinc-950/35 border border-zinc-850/80 rounded-xl p-3 text-xs hover:border-zinc-800 transition space-y-2">
+                        <div key={wl.id} className="bg-zinc-950/35 border border-zinc-850/80 rounded-xl p-3.5 text-sm hover:border-zinc-800 transition space-y-2">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="space-y-0.5 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-1.5 py-0.5 bg-zinc-800 text-zinc-300 rounded font-bold text-[10px]">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 bg-zinc-850 border border-zinc-750 text-zinc-100 rounded font-bold text-xs shrink-0">
                                   {associatedClass ? associatedClass.name : 'Turma Excluída'}
                                 </span>
-                                <span className="text-zinc-400 font-semibold truncate">
+                                <span className="text-zinc-200 font-bold text-sm truncate">
                                   {associatedSubject ? associatedSubject.name : 'Disciplina Excluída'}
                                 </span>
                               </div>
-                              <p className="text-zinc-500 text-[11px] flex items-center gap-1">
-                                <span className="font-medium text-zinc-400">Prof:</span> 
-                                <span className="text-zinc-300 font-medium">
+                              <p className="text-zinc-400 text-xs flex items-center gap-1">
+                                <span className="font-semibold text-zinc-500">Prof:</span> 
+                                <span className="text-zinc-300 font-semibold">
                                   {associatedTeacher ? associatedTeacher.teacherName : (wl.teacherUsername ? `@${wl.teacherUsername}` : 'Nenhum Professor Atribuído')}
                                 </span>
                               </p>
                             </div>
                             
-                            <div className="flex items-center gap-1.5 shrink-0">
+                            <div className="flex items-center gap-2 shrink-0">
                               {isEditingThis ? (
-                                <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1.5">
                                   <input
                                     type="number"
-                                    className="w-16 bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs font-mono font-bold rounded px-1.5 py-0.5"
+                                    className="w-18 bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs font-mono font-bold rounded px-2 py-1"
                                     value={editingWorkloadLessons}
                                     onChange={(e) => setEditingWorkloadLessons(e.target.value === '' ? '' : Number(e.target.value))}
                                   />
                                   <button
                                     onClick={() => handleUpdateWorkloadInline(wl, Number(editingWorkloadLessons))}
-                                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] rounded cursor-pointer"
+                                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded cursor-pointer"
                                   >
                                     Ok
                                   </button>
                                   <button
                                     onClick={() => setEditingWorkloadId(null)}
-                                    className="p-0.5 bg-zinc-800 text-zinc-400 rounded hover:text-white cursor-pointer"
+                                    className="p-1 bg-zinc-800 text-zinc-400 rounded hover:text-white cursor-pointer"
                                   >
-                                    <X className="w-3 h-3" />
+                                    <X className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               ) : (
                                 <>
-                                  <span className="text-amber-400 font-mono font-bold bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 text-[10px]">
+                                  <span className="text-amber-400 font-mono font-bold bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20 text-xs">
                                     {wl.totalLessons} aulas
                                   </span>
                                   <button
@@ -627,17 +627,17 @@ export default function CoordGlobalSubjects() {
                                       setEditingWorkloadId(wl.id);
                                       setEditingWorkloadLessons(wl.totalLessons);
                                     }}
-                                    className="p-1 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+                                    className="p-1.5 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
                                     title="Editar Carga"
                                   >
-                                    <Edit2 className="w-3 h-3" />
+                                    <Edit2 className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     onClick={() => handleDeleteWorkloadClick(wl.id)}
-                                    className="p-1 hover:bg-zinc-850 text-zinc-500 hover:text-rose-450 rounded transition cursor-pointer"
+                                    className="p-1.5 hover:bg-zinc-850 text-zinc-500 hover:text-rose-450 rounded transition cursor-pointer"
                                     title="Excluir Carga"
                                   >
-                                    <Trash2 className="w-3 h-3" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </>
                               )}

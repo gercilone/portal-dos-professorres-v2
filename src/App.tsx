@@ -12,6 +12,7 @@ import CoordGlobalClasses from './components/CoordGlobalClasses';
 import CoordGlobalSubjects from './components/CoordGlobalSubjects';
 import CoordBackups from './components/CoordBackups';
 import { sortClasses } from './types';
+import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from './utils/deduplicate';
 import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -118,6 +119,18 @@ export default function App() {
     }
     localStorage.setItem('portal_theme', theme);
   }, [theme]);
+
+  // FONT SIZE STATE
+  const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>(() => {
+    return (localStorage.getItem('portal_font_size') as 'normal' | 'large' | 'xl') || 'normal';
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.remove('font-size-normal', 'font-size-large', 'font-size-xl');
+    root.classList.add(`font-size-${fontSize}`);
+    localStorage.setItem('portal_font_size', fontSize);
+  }, [fontSize]);
 
   // ROLE & COORD STATES
   const [userRole, setUserRole] = useState<'teacher' | 'coordinator'>(() => {
@@ -926,6 +939,11 @@ export default function App() {
 
         if (activeUser && isAuthenticated && (role === 'teacher' || inspecting)) {
           try {
+            // Run silent automatic local deduplication on startup to resolve multi-device conflicts (phone & browser)
+            if (!inspecting) {
+              await deduplicateLocalDatabase(activeUser);
+            }
+
             const schoolCount = await db.schools.count();
             const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
             const initialSyncDone = localStorage.getItem('portal_initial_sync_done') === 'true';
@@ -939,6 +957,7 @@ export default function App() {
 
               if (pullSuccess) {
                 localStorage.setItem('portal_initial_sync_done', 'true');
+                await deduplicateLocalDatabase(activeUser);
               }
 
               if (forcePull) {
@@ -974,6 +993,12 @@ export default function App() {
           }
         } else if (activeUser && isAuthenticated && role === 'coordinator') {
           try {
+            // Deduplicate global coordinator data in the background
+            await deduplicateGlobalDatabase();
+          } catch (e) {
+            console.error('Error with global deduplication on coordinator startup:', e);
+          }
+          try {
             const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
             if (forcePull) {
               setIsInitialSyncing(true);
@@ -991,7 +1016,7 @@ export default function App() {
           }
         } else {
           // Fallback for default unauthenticated startup or coordinator view (no local db sync needed unless inspecting)
-          if (!activeUser || (role === 'teacher' && activeUser.toLowerCase() === 'professor')) {
+          if (role === 'teacher' && activeUser && activeUser.toLowerCase() === 'professor') {
             await seedDatabase();
           }
         }
@@ -1503,6 +1528,20 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 bg-zinc-850 border border-zinc-700 rounded-lg px-2.5 py-1">
+                <span className="text-[10px] text-zinc-400 font-extrabold uppercase select-none">Fonte:</span>
+                <select
+                  value={fontSize}
+                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl')}
+                  className="bg-transparent border-none text-zinc-200 font-bold text-xs focus:outline-none cursor-pointer p-0 text-center pr-2"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="normal" className="bg-zinc-900 text-zinc-200">Padrão</option>
+                  <option value="large" className="bg-zinc-900 text-zinc-200">Grande</option>
+                  <option value="xl" className="bg-zinc-900 text-zinc-200">Gigante</option>
+                </select>
+              </div>
+
               <button
                 type="button"
                 onClick={handleLogout}
@@ -1985,6 +2024,8 @@ export default function App() {
         onLogout={handleLogout}
         theme={theme}
         setTheme={setTheme}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
       />
 
       {/* Main Tabs Navigation Bar */}

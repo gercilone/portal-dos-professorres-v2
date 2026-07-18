@@ -1,6 +1,7 @@
 import { useState, FormEvent, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
+import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/deduplicate';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads } from '../firebase';
@@ -388,8 +389,56 @@ export default function TabFSettings({
         }
       }
 
-      // Force push teacher data to cloud
+      // 6. Automatically import global subjects and workloads of this class
+      const globalSubs = await getGlobalSubjects();
+      const globalWls = await getGlobalWorkloads();
+
+      const localSubjects = await db.subjects.toArray();
+      const subMapping: { [globalId: string]: number } = {};
+
+      for (const gs of globalSubs) {
+        let localSub = localSubjects.find(s => s.name.toLowerCase() === gs.name.toLowerCase());
+        let localSubId: number;
+        if (localSub) {
+          localSubId = localSub.id!;
+        } else {
+          localSubId = await db.subjects.add({ name: gs.name });
+        }
+        subMapping[gs.id] = localSubId;
+      }
+
+      let importedWorkloadsCount = 0;
       const activeUser = localStorage.getItem('portal_active_user');
+
+      const classWorkloads = globalWls.filter(wl => wl.classId === cls.id);
+
+      for (const gwl of classWorkloads) {
+        if (gwl.teacherUsername && activeUser && gwl.teacherUsername.toLowerCase() !== activeUser.toLowerCase()) {
+          continue;
+        }
+
+        const lSubId = subMapping[gwl.subjectId];
+        if (!lSubId) continue;
+
+        const existingLocalWl = await db.subjectWorkloads
+          .where('classId')
+          .equals(localClassId)
+          .filter(w => w.subjectId === lSubId)
+          .first();
+
+        if (existingLocalWl) {
+          await db.subjectWorkloads.update(existingLocalWl.id!, { totalLessons: gwl.totalLessons });
+        } else {
+          await db.subjectWorkloads.add({
+            classId: localClassId,
+            subjectId: lSubId,
+            totalLessons: gwl.totalLessons
+          });
+        }
+        importedWorkloadsCount++;
+      }
+
+      // Force push teacher data to cloud
       if (activeUser) {
         await pushTeacherDataToCloud(activeUser, db);
       }
@@ -397,7 +446,7 @@ export default function TabFSettings({
       setAlertDialog({
         isOpen: true,
         title: 'Turma Anexada!',
-        message: `A turma "${cls.name}" da escola "${globalSchool.name}" foi integrada com sucesso! ${addedCount} alunos cadastrados. ${skippedCount > 0 ? `(${skippedCount} alunos já existiam e foram mesclados no seu diário)` : ''}`
+        message: `A turma "${cls.name}" da escola "${globalSchool.name}" foi integrada com sucesso! ${addedCount} alunos cadastrados. ${importedWorkloadsCount > 0 ? `${importedWorkloadsCount} disciplinas/cargas horárias vinculadas automaticamente.` : ''} ${skippedCount > 0 ? `(${skippedCount} alunos já existiam e foram mesclados no seu diário)` : ''}`
       });
 
     } catch (err) {
@@ -1703,7 +1752,7 @@ export default function TabFSettings({
       cancelText: 'Cancelar',
       onConfirm: async () => {
         try {
-          await seedDatabase();
+          await seedDatabase(true);
           setConfirmDialog(null);
           setAlertDialog({
             isOpen: true,
@@ -1737,13 +1786,12 @@ export default function TabFSettings({
 
           setCloudSyncDisabled(true);
           try {
-            // Execute cascading deletions and merges inside a transaction
+            // First: Delete local example schools and ALL their cascading contents
             await db.transaction('rw', [
               db.schools, db.classes, db.students, db.bimonthlyGrades,
               db.attendance, db.studentVistos, db.vistoRankingScores, db.extraGrades, db.weeklySchedule, db.subjectWorkloads,
               db.assignmentDescriptions, db.lessons, db.vistoColumns, db.subjects
             ], async () => {
-              // First: Delete example schools and ALL their cascading contents
               const exampleNames = ['escola estadual cora coralina', 'colégio integral anglo'];
               const allSchools = await db.schools.toArray();
               
@@ -1776,125 +1824,31 @@ export default function TabFSettings({
                   await db.weeklySchedule.where({ schoolId: schId }).delete();
                 }
               }
-
-              // Second: Merge duplicate schools that have the same name (excluding example schools)
-              const remainingSchools = await db.schools.toArray();
-              const groupedByName: { [name: string]: School[] } = {};
-              for (const sch of remainingSchools) {
-                const normalizedName = sch.name.trim().toLowerCase();
-                if (!groupedByName[normalizedName]) {
-                  groupedByName[normalizedName] = [];
-                }
-                groupedByName[normalizedName].push(sch);
-              }
-
-              for (const name of Object.keys(groupedByName)) {
-                const list = groupedByName[name];
-                if (list.length > 1) {
-                  // Sort by ID to keep the oldest one (lowest ID)
-                  list.sort((a, b) => (a.id || 0) - (b.id || 0));
-                  const keptSchool = list[0];
-                  const keptSchoolId = keptSchool.id!;
-
-                  // Merge all other duplicate schools into keptSchool
-                  for (let i = 1; i < list.length; i++) {
-                    const dupSchool = list[i];
-                    const dupSchoolId = dupSchool.id!;
-
-                    // Get all classes in duplicate school
-                    const dupClasses = await db.classes.where({ schoolId: dupSchoolId }).toArray();
-                    
-                    // Get existing classes in kept school to check for class name duplicates
-                    const keptClasses = await db.classes.where({ schoolId: keptSchoolId }).toArray();
-
-                    for (const dupClass of dupClasses) {
-                      const dupClassNameLower = dupClass.name.trim().toLowerCase();
-                      const matchingKeptClass = keptClasses.find(c => c.name.trim().toLowerCase() === dupClassNameLower);
-
-                      if (matchingKeptClass) {
-                        // We have a class duplicate! Merge duplicate class into matchingKeptClass
-                        const keptClassId = matchingKeptClass.id!;
-                        const dupClassId = dupClass.id!;
-
-                        // Move students
-                        const studentsToMove = await db.students.where({ classId: dupClassId }).toArray();
-                        for (const s of studentsToMove) {
-                          await db.students.update(s.id!, { classId: keptClassId });
-                        }
-
-                        // Move workloads
-                        const workloadsToMove = await db.subjectWorkloads.where({ classId: dupClassId }).toArray();
-                        for (const wl of workloadsToMove) {
-                          // Check if workload already exists in kept class for same subject
-                          const existingWl = await db.subjectWorkloads.where({ classId: keptClassId, subjectId: wl.subjectId }).first();
-                          if (existingWl) {
-                            await db.subjectWorkloads.delete(wl.id!);
-                          } else {
-                            await db.subjectWorkloads.update(wl.id!, { classId: keptClassId });
-                          }
-                        }
-
-                        // Move schedules
-                        const schedulesToMove = await db.weeklySchedule.where({ classId: dupClassId }).toArray();
-                        for (const sch of schedulesToMove) {
-                          await db.weeklySchedule.update(sch.id!, { classId: keptClassId, schoolId: keptSchoolId });
-                        }
-
-                        // Move assignment descriptions
-                        const assignmentsToMove = await db.assignmentDescriptions.where({ classId: dupClassId }).toArray();
-                        for (const ass of assignmentsToMove) {
-                          await db.assignmentDescriptions.update(ass.id!, { classId: keptClassId });
-                        }
-
-                        // Move lessons
-                        const lessonsToMove = await db.lessons.where({ classId: dupClassId }).toArray();
-                        for (const les of lessonsToMove) {
-                          await db.lessons.update(les.id!, { classId: keptClassId });
-                        }
-
-                        // Move visto columns
-                        const vistoColsToMove = await db.vistoColumns.where({ classId: dupClassId }).toArray();
-                        for (const vc of vistoColsToMove) {
-                          await db.vistoColumns.update(vc.id!, { classId: keptClassId });
-                        }
-
-                        // Finally delete duplicate class
-                        await db.classes.delete(dupClassId);
-
-                      } else {
-                        // No duplicate class name, just move the class to the kept school!
-                        await db.classes.update(dupClass.id!, { schoolId: keptSchoolId });
-                        // Update weekly schedules for this class to point to keptSchoolId
-                        const schedulesToMove = await db.weeklySchedule.where({ classId: dupClass.id! }).toArray();
-                        for (const sch of schedulesToMove) {
-                          await db.weeklySchedule.update(sch.id!, { schoolId: keptSchoolId });
-                        }
-                      }
-                    }
-
-                    // Delete weekly schedules directly tied to dupSchoolId (not class schedules)
-                    await db.weeklySchedule.where({ schoolId: dupSchoolId }).delete();
-
-                    // Finally delete duplicate school
-                    await db.schools.delete(dupSchoolId);
-                  }
-                }
-              }
             });
           } finally {
             setCloudSyncDisabled(false);
           }
 
-          // Sync changes immediately with the cloud (this will perform physical deletes in Firestore)
-          const activeUser = localStorage.getItem('portal_active_user');
-          if (activeUser) {
-            await pushTeacherDataToCloud(activeUser, db);
-          }
+          // Second: Run local deduplication
+          const activeUser = localStorage.getItem('portal_active_user') || '';
+          const localStats = await deduplicateLocalDatabase(activeUser);
+
+          // Third: Run global deduplication
+          const globalStats = await deduplicateGlobalDatabase();
 
           setAlertDialog({
             isOpen: true,
-            title: 'Limpeza Concluída!',
-            message: 'As escolas de exemplo e duplicidades foram limpas e consolidadas com sucesso localmente e na nuvem!',
+            title: 'Limpeza e Consolidação Concluída!',
+            message: `A faxina foi realizada com sucesso!\n\n` +
+                     `• Escolas Mescladas (Local): ${localStats.schoolsMerged}\n` +
+                     `• Turmas Mescladas (Local): ${localStats.classesMerged}\n` +
+                     `• Disciplinas Mescladas (Local): ${localStats.subjectsMerged}\n` +
+                     `• Alunos Mesclados (Local): ${localStats.studentsMerged}\n\n` +
+                     `• Escolas Mescladas (Nuvem): ${globalStats.schoolsMerged}\n` +
+                     `• Turmas Mescladas (Nuvem): ${globalStats.classesMerged}\n` +
+                     `• Disciplinas Mescladas (Nuvem): ${globalStats.subjectsMerged}\n` +
+                     `• Alunos Mesclados (Nuvem): ${globalStats.studentsMerged}\n\n` +
+                     `As duplicidades foram completamente resolvidas e os dados unificados no celular e navegador!`,
             onClose: () => {
               window.location.reload();
             }

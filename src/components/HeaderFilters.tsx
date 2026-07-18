@@ -17,6 +17,8 @@ interface HeaderFiltersProps {
   onLogout: () => void;
   theme?: 'light' | 'dark';
   setTheme?: (t: 'light' | 'dark') => void;
+  fontSize?: 'normal' | 'large' | 'xl';
+  setFontSize?: (sz: 'normal' | 'large' | 'xl') => void;
 }
 
 export default function HeaderFilters({
@@ -33,6 +35,8 @@ export default function HeaderFilters({
   onLogout,
   theme = 'dark',
   setTheme,
+  fontSize = 'normal',
+  setFontSize,
 }: HeaderFiltersProps) {
   const schools = useLiveQuery(() => db.schools.toArray()) || [];
   const classes = useLiveQuery(async () => {
@@ -120,6 +124,22 @@ export default function HeaderFilters({
           </div>
 
           <div className="flex items-center gap-2">
+            {setFontSize && (
+              <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1">
+                <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Tamanho da Fonte:</span>
+                <select
+                  value={fontSize}
+                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl')}
+                  className="bg-transparent border-none text-zinc-300 font-bold text-xs focus:outline-none cursor-pointer focus:ring-0 p-0 text-center pr-2"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value="normal" className="bg-zinc-950 text-zinc-300">Padrão</option>
+                  <option value="large" className="bg-zinc-950 text-zinc-300">Grande</option>
+                  <option value="xl" className="bg-zinc-950 text-zinc-300">Gigante</option>
+                </select>
+              </div>
+            )}
+
             {setTheme && (
               <button
                 type="button"

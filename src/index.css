@@ -175,3 +175,45 @@ html.light-theme,
 .light-theme .bg-zinc-950\/80 {
   background-color: rgba(15, 23, 42, 0.5) !important; /* soft dark overlay */
 }
+
+/* Accessibility Global Font-Size overrides */
+html.font-size-large {
+  font-size: 18px !important; /* 112.5% scale */
+}
+html.font-size-xl {
+  font-size: 21px !important; /* ~131% scale */
+}
+
+/* Make sure absolute-sized badges and tags also scale up in large/xl modes */
+html.font-size-large .text-\[9px\],
+html.font-size-large .text-\[10px\],
+html.font-size-large .text-\[11px\],
+html.font-size-large .text-\[12px\],
+html.font-size-large .text-xs,
+html.font-size-large .text-\[13px\] {
+  font-size: 13px !important;
+}
+html.font-size-large .text-sm,
+html.font-size-large select,
+html.font-size-large input {
+  font-size: 15px !important;
+}
+
+html.font-size-xl .text-\[9px\],
+html.font-size-xl .text-\[10px\],
+html.font-size-xl .text-\[11px\],
+html.font-size-xl .text-\[12px\],
+html.font-size-xl .text-xs,
+html.font-size-xl .text-\[13px\] {
+  font-size: 15px !important;
+}
+html.font-size-xl .text-sm,
+html.font-size-xl select,
+html.font-size-xl input {
+  font-size: 17px !important;
+}
+html.font-size-xl .text-base,
+html.font-size-xl h3 {
+  font-size: 19px !important;
+}
+

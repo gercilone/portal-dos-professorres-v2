@@ -120,18 +120,20 @@ export const db = new Proxy({}, {
 let isSeeding = false;
 
 // Seed function to initialize dummy data if db is empty
-export async function seedDatabase() {
+export async function seedDatabase(force = false) {
   if (isSeeding) return;
   isSeeding = true;
 
   try {
-    if (localStorage.getItem('portal_skip_seed') === 'true') {
-      return;
-    }
-    const activeUser = localStorage.getItem('portal_active_user');
-    if (activeUser && activeUser.toLowerCase() !== 'professor') {
-      localStorage.setItem('portal_skip_seed', 'true');
-      return;
+    if (!force) {
+      if (localStorage.getItem('portal_skip_seed') === 'true') {
+        return;
+      }
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (!activeUser || activeUser.toLowerCase() !== 'professor') {
+        localStorage.setItem('portal_skip_seed', 'true');
+        return;
+      }
     }
     const schoolCount = await db.schools.count();
     if (schoolCount > 0) return;
