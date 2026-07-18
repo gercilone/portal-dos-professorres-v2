@@ -32,6 +32,7 @@ export default function TabDAttendance({
   const [content, setContent] = useState('');
   const [isSaved, setIsSaved] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<number | undefined>(undefined);
+  const [lessonToDelete, setLessonToDelete] = useState<{ id: number; date: string } | null>(null);
 
   // Load current workload for expected lessons progress
   const currentWorkload = useLiveQuery(async () => {
@@ -368,10 +369,13 @@ export default function TabDAttendance({
     setIsSaved(false);
   };
 
-  const handleDeleteLesson = async (lessonId: number, lessonDate: string) => {
-    if (!window.confirm(`Tem certeza que deseja excluir a aula ministrada do dia ${lessonDate.split('-').reverse().join('/')}?`)) {
-      return;
-    }
+  const handleDeleteLesson = (lessonId: number, lessonDate: string) => {
+    setLessonToDelete({ id: lessonId, date: lessonDate });
+  };
+
+  const confirmDeleteLesson = async () => {
+    if (!lessonToDelete) return;
+    const { id: lessonId, date: lessonDate } = lessonToDelete;
     try {
       await db.lessons.delete(lessonId);
       
@@ -388,6 +392,13 @@ export default function TabDAttendance({
         setLessonCount(2);
         setContent('');
       }
+
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser) {
+        await pushTeacherDataToCloud(activeUser, db);
+      }
+
+      setLessonToDelete(null);
     } catch (err) {
       console.error('Error deleting lesson:', err);
     }
@@ -580,12 +591,12 @@ export default function TabDAttendance({
           )}
         </div>
 
-        {/* 2. Chamada Inteligente */}
+        {/* 2. Chamada */}
         <div className="col-span-12 lg:col-span-7 lg:row-span-3 order-2 lg:order-2 bg-zinc-900 border border-zinc-800 p-5 rounded-2xl space-y-4 shadow-xl h-fit">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-zinc-800 pb-3 gap-2">
             <div>
               <h3 className="text-white font-bold text-base flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Chamada Inteligente
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Chamada
               </h3>
               <p className="text-xs text-zinc-400 mt-0.5">
                 Atribua faltas clicando no número correspondente para a aula do dia selecionado
@@ -611,23 +622,29 @@ export default function TabDAttendance({
               </div>
 
               {/* Quantidade de Aulas */}
-              <div className="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800 focus-within:border-zinc-700 transition">
+              <div className="flex items-center gap-2 bg-zinc-950 px-2.5 py-1 rounded-lg border border-zinc-800 transition">
                 <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Aulas:</span>
-                <select
-                  id="attendance-lesson-count-select-header"
-                  value={lessonCount}
-                  disabled={isReadOnly}
-                  onChange={(e) => {
-                    handleUpdateLessonCount(parseInt(e.target.value));
-                  }}
-                  className="bg-transparent border-none text-zinc-300 font-bold font-mono text-xs focus:ring-0 p-0 pr-6 cursor-pointer focus:outline-none w-[75px]"
-                  style={{ colorScheme: 'dark' }}
-                >
-                  <option value={1}>1 Aula</option>
-                  <option value={2}>2 Aulas</option>
-                  <option value={3}>3 Aulas</option>
-                  <option value={4}>4 Aulas</option>
-                </select>
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((num) => {
+                    const isActive = lessonCount === num;
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        disabled={isReadOnly}
+                        onClick={() => handleUpdateLessonCount(num)}
+                        className={`w-7 h-7 text-xs font-bold rounded-md flex items-center justify-center transition-all ${
+                          isActive
+                            ? 'bg-blue-600 text-white font-black shadow-md shadow-blue-950/40'
+                            : 'bg-zinc-900 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                        } disabled:opacity-50 disabled:pointer-events-none`}
+                        title={`${num} ${num === 1 ? 'Aula' : 'Aulas'}`}
+                      >
+                        {num}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
@@ -735,44 +752,6 @@ export default function TabDAttendance({
           </div>
 
           <div className="space-y-3">
-            {/* Date Selection */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-400 block">Data da Aula</label>
-              <div className="relative">
-                <input
-                  id="attendance-date-select"
-                  type="date"
-                  required
-                  disabled={isReadOnly}
-                  value={selectedDate}
-                  onChange={(e) => {
-                    setSelectedDate(e.target.value);
-                    setIsSaved(false);
-                  }}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none disabled:opacity-60"
-                />
-              </div>
-            </div>
-
-            {/* Lesson Count */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-400 block">Quantidade de Aulas / Horas</label>
-              <select
-                id="attendance-lesson-count-select"
-                value={lessonCount}
-                disabled={isReadOnly}
-                onChange={(e) => {
-                  handleUpdateLessonCount(parseInt(e.target.value));
-                }}
-                className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
-              >
-                <option value={1}>1 Aula / Hora de Aula</option>
-                <option value={2}>2 Aulas / Horas de Aula (Bloco Comum)</option>
-                <option value={3}>3 Aulas / Horas de Aula</option>
-                <option value={4}>4 Aulas / Horas de Aula</option>
-              </select>
-            </div>
-
             {/* Lesson Content Description */}
             <div className="space-y-1">
               <label className="text-xs font-semibold text-zinc-400 block">Conteúdo Ministrado</label>
@@ -939,6 +918,52 @@ export default function TabDAttendance({
             );
           })()}
         </div>
+
+      {/* Custom Confirmation Modal for Deleting Lesson */}
+      {lessonToDelete && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-rose-500/10 text-rose-500 rounded-xl">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h3 className="text-white font-extrabold text-base text-left">Excluir Aula Ministrada</h3>
+                <p className="text-zinc-400 text-xs leading-relaxed text-left">
+                  Tem certeza que deseja excluir permanentemente a aula ministrada do dia{' '}
+                  <span className="font-bold text-zinc-200">
+                    {lessonToDelete.date.split('-').reverse().join('/')}
+                  </span>
+                  ?
+                </p>
+                <div className="bg-amber-500/5 border border-amber-500/10 p-2.5 rounded-lg mt-2 text-left">
+                  <p className="text-amber-500/90 text-[10px] font-medium leading-relaxed">
+                    <strong>Nota:</strong> Todas as faltas dos alunos registradas nesta data também serão apagadas para manter a consistência dos dados do boletim.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
+              <button
+                type="button"
+                onClick={() => setLessonToDelete(null)}
+                className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-transparent hover:bg-zinc-800/60 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteLesson}
+                className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-500 active:bg-rose-700 rounded-xl transition shadow-lg shadow-rose-950/40 cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Excluir Aula
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

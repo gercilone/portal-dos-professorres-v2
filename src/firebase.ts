@@ -7,9 +7,17 @@ import {
   getDocs,
   setDoc,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  setLogLevel
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+
+// Silence Firestore's internal SDK logs in console to avoid noisy uncaught connection warnings/errors
+try {
+  setLogLevel('silent');
+} catch (e) {
+  console.warn('Could not set Firestore log level to silent:', e);
+}
 
 // Helper to remove any 'undefined' or un-serializable fields recursively so Firestore never crashes
 export function cleanDataForFirestore(obj: any): any {
@@ -81,7 +89,7 @@ export interface ProfessorAccount {
 
 // Timeout utility to ensure network calls do not block forever in sandboxed/offline-prone environments
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 8000): Promise<T> {
-  const actualTimeout = Math.max(timeoutMs, 6000); // Snappy feedback threshold: at least 6 seconds, but no long freezes
+  const actualTimeout = Math.max(timeoutMs, 3000); // Snappy feedback threshold: at least 3 seconds, but no long freezes
   let timeoutId: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -110,11 +118,44 @@ export function handleFirestoreError(error: any) {
     errMsg.includes('exceeded') ||
     errMsg.includes('quota limit exceeded') ||
     errMsg.includes('timeout') ||
-    errMsg.includes('time out')
+    errMsg.includes('time out') ||
+    errMsg.includes('unavailable') ||
+    errMsg.includes('could not reach') ||
+    errMsg.includes('connection failed') ||
+    errMsg.includes('failed to connect') ||
+    errMsg.includes('offline') ||
+    errCode.includes('unavailable')
   ) {
-    console.warn('Firestore Quota/Resource Exceeded or Timeout/Hang detected. Activating offline contingency mode.');
+    console.warn('Firestore offline/connection or quota issue detected. Activating offline contingency mode.');
     localStorage.setItem('portal_cloud_fallback', 'true');
     window.dispatchEvent(new Event('storage'));
+  }
+}
+
+// Helper to log Firestore errors without spamming standard console.error if they are expected connection/offline/quota issues
+export function logFirebaseError(message: string, error: any) {
+  if (!error) return;
+  const errMsg = String(error?.message || error || '').toLowerCase();
+  const errCode = String(error?.code || '').toLowerCase();
+  const isConnectionOrQuota = 
+    errMsg.includes('quota') ||
+    errMsg.includes('resource-exhausted') ||
+    errCode.includes('resource-exhausted') ||
+    errMsg.includes('exceeded') ||
+    errMsg.includes('quota limit exceeded') ||
+    errMsg.includes('timeout') ||
+    errMsg.includes('time out') ||
+    errMsg.includes('unavailable') ||
+    errMsg.includes('could not reach') ||
+    errMsg.includes('connection failed') ||
+    errMsg.includes('failed to connect') ||
+    errMsg.includes('offline') ||
+    errCode.includes('unavailable');
+
+  if (isConnectionOrQuota || isCloudFallback()) {
+    console.warn(`${message} (Gracefully handled via local contingency fallback):`, error);
+  } else {
+    console.error(message, error);
   }
 }
 
@@ -184,7 +225,7 @@ export async function syncProfessorsListInCloud() {
     localStorage.setItem('portal_professors_list', JSON.stringify(cloudList));
     return cloudList;
   } catch (error) {
-    console.error('Error syncing professors list with cloud:', error);
+    logFirebaseError('Error syncing professors list with cloud:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_professors_list');
     return localStr ? JSON.parse(localStr) : [];
@@ -216,7 +257,7 @@ export async function saveProfessorToCloud(prof: ProfessorAccount) {
     localStorage.setItem('portal_cloud_fallback', 'false');
     window.dispatchEvent(new Event('storage'));
   } catch (error) {
-    console.error('Error saving professor to cloud:', error);
+    logFirebaseError('Error saving professor to cloud:', error);
     localStorage.setItem('portal_cloud_fallback', 'true');
     window.dispatchEvent(new Event('storage'));
   }
@@ -285,7 +326,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
     }
     return true;
   } catch (error) {
-    console.error(`Error pulling diary data for ${username}:`, error);
+    logFirebaseError(`Error pulling diary data for ${username}:`, error);
     handleFirestoreError(error);
     return false;
   } finally {
@@ -394,7 +435,7 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
     setCloudFallbackStatus(false);
     return true;
   } catch (error) {
-    console.error(`Error pushing diary data for ${username}:`, error);
+    logFirebaseError(`Error pushing diary data for ${username}:`, error);
     handleFirestoreError(error);
     return false;
   }
@@ -425,7 +466,7 @@ export async function syncSingleRecord(
       await setDoc(docRef, cleanedData);
     }
   } catch (error) {
-    console.error(`Error syncing single record on ${tableName}:`, error);
+    logFirebaseError(`Error syncing single record on ${tableName}:`, error);
     handleFirestoreError(error);
   }
 }
@@ -481,7 +522,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     localStorage.setItem('portal_coordinators_list', JSON.stringify(cloudList));
     return cloudList;
   } catch (error) {
-    console.error('Error syncing coordinators list with cloud:', error);
+    logFirebaseError('Error syncing coordinators list with cloud:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_coordinators_list');
     if (localStr) {
@@ -518,7 +559,7 @@ export async function saveCoordinatorToCloud(coord: CoordinatorAccount) {
     await withTimeout(setDoc(doc(dbInstance, 'coordinators', usernameLower), cleanedCoord), 4000);
     setCloudFallbackStatus(false);
   } catch (error) {
-    console.error('Error saving coordinator to cloud:', error);
+    logFirebaseError('Error saving coordinator to cloud:', error);
     setCloudFallbackStatus(true);
   }
 }
@@ -539,7 +580,7 @@ export async function deleteCoordinatorFromCloud(username: string) {
     await withTimeout(deleteDoc(doc(dbInstance, 'coordinators', usernameLower)), 4000);
     setCloudFallbackStatus(false);
   } catch (error) {
-    console.error('Error deleting coordinator from cloud:', error);
+    logFirebaseError('Error deleting coordinator from cloud:', error);
     setCloudFallbackStatus(true);
   }
 }
@@ -560,7 +601,7 @@ export async function deleteProfessorFromCloud(username: string) {
     await withTimeout(deleteDoc(doc(dbInstance, 'professors', usernameLower)), 4000);
     setCloudFallbackStatus(false);
   } catch (error) {
-    console.error('Error deleting professor from cloud:', error);
+    logFirebaseError('Error deleting professor from cloud:', error);
     setCloudFallbackStatus(true);
   }
 }
