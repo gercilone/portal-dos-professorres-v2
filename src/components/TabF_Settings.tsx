@@ -228,30 +228,36 @@ export default function TabFSettings({
       const localClasses = await db.classes.toArray();
       const localSubjects = await db.subjects.toArray();
 
-      // 3. Map global subjects to local subjects, creating missing ones
+      const activeUser = localStorage.getItem('portal_active_user');
+
+      // Filter global workloads that belong to this teacher
+      const teacherGlobalWls = globalWls.filter(gwl => {
+        if (!gwl.teacherUsername || !activeUser) return false;
+        return gwl.teacherUsername.toLowerCase() === activeUser.toLowerCase();
+      });
+
+      // 3. Map global subjects to local subjects, creating missing ones (only those assigned to this teacher)
       const subMapping: { [globalId: string]: number } = {}; // Maps globalSubjectId to localSubjectId
 
-      for (const gs of globalSubs) {
+      for (const gwl of teacherGlobalWls) {
+        const gs = globalSubs.find(s => s.id === gwl.subjectId);
+        if (!gs) continue;
+
         let localSub = localSubjects.find(s => s.name.toLowerCase() === gs.name.toLowerCase());
         let localSubId: number;
         if (localSub) {
           localSubId = localSub.id!;
         } else {
           localSubId = await db.subjects.add({ name: gs.name });
+          localSubjects.push({ id: localSubId, name: gs.name });
         }
         subMapping[gs.id] = localSubId;
       }
 
       // 4. Map global workloads to local workloads
       let importedWorkloadsCount = 0;
-      const activeUser = localStorage.getItem('portal_active_user');
 
-      for (const gwl of globalWls) {
-        // Filter workloads by assigned teacher if defined
-        if (gwl.teacherUsername && activeUser && gwl.teacherUsername.toLowerCase() !== activeUser.toLowerCase()) {
-          continue;
-        }
-
+      for (const gwl of teacherGlobalWls) {
         const gClass = globalCls.find(c => c.id === gwl.classId);
         if (!gClass) continue;
 
@@ -294,10 +300,12 @@ export default function TabFSettings({
         await pushTeacherDataToCloud(activeUser, db);
       }
 
+      const mappedSubjectsCount = Object.keys(subMapping).length;
+
       setAlertDialog({
         isOpen: true,
         title: 'Sincronização Concluída',
-        message: `As disciplinas e cargas horárias oficiais da coordenação foram importadas e atualizadas com sucesso! (${globalSubs.length} disciplinas mapeadas/atualizadas, ${importedWorkloadsCount} cargas horárias associadas às suas turmas locais).`
+        message: `As disciplinas e cargas horárias oficiais da coordenação foram importadas e atualizadas com sucesso! (${mappedSubjectsCount} disciplinas mapeadas/atualizadas, ${importedWorkloadsCount} cargas horárias associadas às suas turmas locais).`
       });
     } catch (err) {
       console.error('Error importing global subjects and workloads:', err);
@@ -389,34 +397,39 @@ export default function TabFSettings({
         }
       }
 
-      // 6. Automatically import global subjects and workloads of this class
+      // 6. Automatically import global subjects and workloads of this class that belong to the active teacher
       const globalSubs = await getGlobalSubjects();
       const globalWls = await getGlobalWorkloads();
 
       const localSubjects = await db.subjects.toArray();
       const subMapping: { [globalId: string]: number } = {};
+      let importedWorkloadsCount = 0;
+      const activeUser = localStorage.getItem('portal_active_user');
 
-      for (const gs of globalSubs) {
+      // Filter workloads for this class that belong to the active teacher
+      const classWorkloads = globalWls.filter(wl => wl.classId === cls.id);
+      const teacherWorkloads = classWorkloads.filter(gwl => {
+        if (!gwl.teacherUsername || !activeUser) return false;
+        return gwl.teacherUsername.toLowerCase() === activeUser.toLowerCase();
+      });
+
+      // Map/add only the subjects that are actually assigned to this teacher
+      for (const gwl of teacherWorkloads) {
+        const gs = globalSubs.find(s => s.id === gwl.subjectId);
+        if (!gs) continue;
+
         let localSub = localSubjects.find(s => s.name.toLowerCase() === gs.name.toLowerCase());
         let localSubId: number;
         if (localSub) {
           localSubId = localSub.id!;
         } else {
           localSubId = await db.subjects.add({ name: gs.name });
+          localSubjects.push({ id: localSubId, name: gs.name });
         }
         subMapping[gs.id] = localSubId;
       }
 
-      let importedWorkloadsCount = 0;
-      const activeUser = localStorage.getItem('portal_active_user');
-
-      const classWorkloads = globalWls.filter(wl => wl.classId === cls.id);
-
-      for (const gwl of classWorkloads) {
-        if (gwl.teacherUsername && activeUser && gwl.teacherUsername.toLowerCase() !== activeUser.toLowerCase()) {
-          continue;
-        }
-
+      for (const gwl of teacherWorkloads) {
         const lSubId = subMapping[gwl.subjectId];
         if (!lSubId) continue;
 
