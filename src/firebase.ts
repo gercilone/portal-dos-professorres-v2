@@ -108,9 +108,11 @@ export function handleFirestoreError(error: any) {
     errMsg.includes('resource-exhausted') ||
     errCode.includes('resource-exhausted') ||
     errMsg.includes('exceeded') ||
-    errMsg.includes('quota limit exceeded')
+    errMsg.includes('quota limit exceeded') ||
+    errMsg.includes('timeout') ||
+    errMsg.includes('time out')
   ) {
-    console.warn('Firestore Quota/Resource Exceeded detected. Activating offline contingency mode.');
+    console.warn('Firestore Quota/Resource Exceeded or Timeout/Hang detected. Activating offline contingency mode.');
     localStorage.setItem('portal_cloud_fallback', 'true');
     window.dispatchEvent(new Event('storage'));
   }
@@ -292,9 +294,14 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
 }
 
 // Push all local diary data to cloud (Full Backup/Override with precise Deletes)
-export async function pushTeacherDataToCloud(username: string, dexieDb: any): Promise<boolean> {
+export async function pushTeacherDataToCloud(username: string, dexieDb: any, isManual: boolean = false): Promise<boolean> {
   if (!username) return false;
-  if (isCloudFallback()) return false;
+
+  // If we are in cloud fallback mode and this is an automatic push, abort immediately to avoid hammering the quota
+  if (isCloudFallback() && !isManual) {
+    console.log('Cloud fallback is active. Skipping automatic background sync.');
+    return false;
+  }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return false;
@@ -313,12 +320,17 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any): Pr
         let cloudDocIds: string[] = [];
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          const snapshot = await getDocs(colRef);
+          // Snappy 4-second timeout per table fetch to handle quota limits or network dropouts gracefully
+          const snapshot = await withTimeout(getDocs(colRef), 4000);
           snapshot.forEach((doc) => {
             cloudDocIds.push(doc.id);
           });
         } catch (err) {
           console.warn(`Could not fetch cloud doc IDs for ${tableName}:`, err);
+          const errMsg = String(err instanceof Error ? err.message : err || '').toLowerCase();
+          if (errMsg.includes('quota') || errMsg.includes('resource-exhausted') || errMsg.includes('timeout') || errMsg.includes('time out')) {
+            throw err;
+          }
         }
         
         return { tableName, records, cloudDocIds };
@@ -373,12 +385,13 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any): Pr
       return true; // nothing to push or delete
     }
 
-    // 3. Commit all batches in parallel with a reasonable total timeout of 30 seconds
+    // 3. Commit all batches in parallel with a snappy 8-second timeout instead of a 30-second hang
     await withTimeout(
       Promise.all(batches.map(batch => batch.commit())),
-      30000
+      8000
     );
 
+    setCloudFallbackStatus(false);
     return true;
   } catch (error) {
     console.error(`Error pushing diary data for ${username}:`, error);
@@ -1100,4 +1113,77 @@ export async function getGradesBackup(professors: { username: string; teacherNam
 
   return allGrades;
 }
+
+export async function pushGlobalDataToCloud(isManual: boolean = false): Promise<boolean> {
+  // If we are in cloud fallback mode and this is an automatic push, abort immediately to avoid hammering the quota
+  if (isCloudFallback() && !isManual) {
+    console.log('Cloud fallback is active. Skipping automatic global push.');
+    return false;
+  }
+
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return false;
+
+  try {
+    const keys = [
+      { key: 'portal_global_schools', col: 'global_schools' },
+      { key: 'portal_global_classes', col: 'global_classes' },
+      { key: 'portal_global_students', col: 'global_students' },
+      { key: 'portal_global_subjects', col: 'global_subjects' },
+      { key: 'portal_global_workloads', col: 'global_workloads' }
+    ];
+
+    const batches: any[] = [];
+    let currentBatch = writeBatch(dbInstance);
+    let opCount = 0;
+
+    for (const item of keys) {
+      const localStr = localStorage.getItem(item.key);
+      if (!localStr) continue;
+
+      let records: any[] = [];
+      try {
+        records = JSON.parse(localStr);
+      } catch (e) {
+        console.error(`Error parsing local storage key ${item.key}:`, e);
+        continue;
+      }
+
+      if (!Array.isArray(records)) continue;
+
+      for (const record of records) {
+        if (!record || !record.id) continue;
+        const docRef = doc(dbInstance, item.col, String(record.id));
+        const cleanedRecord = cleanDataForFirestore(record);
+        currentBatch.set(docRef, cleanedRecord);
+        opCount++;
+
+        if (opCount === 400) {
+          batches.push(currentBatch);
+          currentBatch = writeBatch(dbInstance);
+          opCount = 0;
+        }
+      }
+    }
+
+    if (opCount > 0) {
+      batches.push(currentBatch);
+    }
+
+    if (batches.length > 0) {
+      // Snappy 8-second timeout for the commit operation
+      await withTimeout(
+        Promise.all(batches.map(batch => batch.commit())),
+        8000
+      );
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error pushing global coordinator data to cloud:', error);
+    handleFirestoreError(error);
+    return false;
+  }
+}
+
 

@@ -4,6 +4,7 @@ import { db } from '../db';
 import { Student, Lesson, Attendance } from '../types';
 import { BookOpen, Calendar, Save, CheckCircle2, UserX, Info, AlertTriangle, ShieldAlert, Sparkles, Clock, ArrowRight, CalendarDays, Trash2, Pencil } from 'lucide-react';
 import { getSchoolColorClasses } from './TabF_Settings';
+import { pushTeacherDataToCloud } from '../firebase';
 
 interface TabDAttendanceProps {
   schoolId: number | undefined;
@@ -345,6 +346,12 @@ export default function TabDAttendance({
           content: safeContent,
         });
       }
+
+      const activeUser = localStorage.getItem('portal_active_user');
+      if (activeUser) {
+        await pushTeacherDataToCloud(activeUser, db);
+      }
+
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
     } catch (err) {

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { School, Class, Subject, sortClasses } from '../types';
-import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon } from 'lucide-react';
+import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon, Save, Cloud, RefreshCw, Check, AlertCircle } from 'lucide-react';
+import { pushTeacherDataToCloud, getGlobalStudents, getGlobalClasses } from '../firebase';
 
 interface HeaderFiltersProps {
   selectedSchoolId: number | undefined;
@@ -50,6 +52,90 @@ export default function HeaderFilters({
   }, [selectedSchoolId]) || [];
   
   const subjects = useLiveQuery(() => db.subjects.toArray()) || [];
+
+  const [isSavingCloud, setIsSavingCloud] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
+  const [syncFeedbackMessage, setSyncFeedbackMessage] = useState<string>('');
+
+  const handleManualSave = async () => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return;
+
+    setIsSavingCloud(true);
+    setSaveSuccess(null);
+    setSyncFeedbackMessage('Sincronizando dados com a nuvem...');
+
+    try {
+      // 1. Fetch fresh global students and classes to pull any new student added by coordinator
+      setSyncFeedbackMessage('Buscando novos alunos da coordenação...');
+      const [freshGlobalStudents, freshGlobalClasses] = await Promise.all([
+        getGlobalStudents(),
+        getGlobalClasses()
+      ]);
+
+      const localClasses = await db.classes.toArray();
+      let addedCount = 0;
+
+      for (const lc of localClasses) {
+        // Find matching global class by name
+        const matchingGlobalClass = freshGlobalClasses.find(
+          gc => gc.name.toLowerCase() === lc.name.toLowerCase()
+        );
+
+        if (matchingGlobalClass) {
+          const classStudents = freshGlobalStudents.filter(st => st.classId === matchingGlobalClass.id);
+          const currentLocalStudents = await db.students.where({ classId: lc.id! }).toArray();
+
+          for (const st of classStudents) {
+            const studentExists = currentLocalStudents.some(
+              localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
+            );
+
+            if (!studentExists) {
+              await db.students.add({
+                classId: lc.id!,
+                name: st.name,
+                rollNumber: st.rollNumber
+              });
+              addedCount++;
+            }
+          }
+        }
+      }
+
+      // 2. Push all local data to cloud Firestore
+      setSyncFeedbackMessage('Gravando dados no servidor...');
+      const success = await pushTeacherDataToCloud(activeUser, db, true);
+      
+      if (success) {
+        setSaveSuccess(true);
+        if (addedCount > 0) {
+          setSyncFeedbackMessage(`Salvo! ${addedCount} novo(s) aluno(s) importado(s) da coordenação.`);
+        } else {
+          setSyncFeedbackMessage('Dados salvos e sincronizados com sucesso!');
+        }
+      } else {
+        setSaveSuccess(false);
+        setSyncFeedbackMessage('Ocorreu um erro ao gravar dados na nuvem.');
+      }
+
+      setTimeout(() => {
+        setSaveSuccess(null);
+        setSyncFeedbackMessage('');
+      }, 4000);
+
+    } catch (err) {
+      console.error('Error during manual save/sync:', err);
+      setSaveSuccess(false);
+      setSyncFeedbackMessage('Erro de conexão ou limite de cota atingido.');
+      setTimeout(() => {
+        setSaveSuccess(null);
+        setSyncFeedbackMessage('');
+      }, 4000);
+    } finally {
+      setIsSavingCloud(false);
+    }
+  };
 
   const handleSchoolClick = (schoolId: number) => {
     setSelectedSchoolId(schoolId);
@@ -124,6 +210,40 @@ export default function HeaderFilters({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Direct Save Button */}
+            <button
+              id="header-manual-save-btn"
+              onClick={handleManualSave}
+              disabled={isSavingCloud}
+              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-xl transition duration-200 select-none cursor-pointer border ${
+                saveSuccess === true
+                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                  : saveSuccess === false
+                  ? 'bg-rose-600/20 border-rose-500/40 text-rose-400'
+                  : 'bg-blue-600 hover:bg-blue-500 border-blue-500/30 text-white shadow shadow-blue-500/10'
+              }`}
+              title="Salvar todas as alterações na Nuvem (Notas, Chamadas, Vistos, etc.) e buscar novos alunos da coordenação"
+            >
+              {isSavingCloud ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              ) : saveSuccess === true ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : saveSuccess === false ? (
+                <AlertCircle className="w-3.5 h-3.5" />
+              ) : (
+                <Cloud className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {isSavingCloud
+                  ? 'Salvando...'
+                  : saveSuccess === true
+                  ? 'Salvo!'
+                  : saveSuccess === false
+                  ? 'Erro ao Salvar'
+                  : 'Salvar Diário'}
+              </span>
+            </button>
+
             {setFontSize && (
               <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1">
                 <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Tamanho da Fonte:</span>
@@ -164,6 +284,27 @@ export default function HeaderFilters({
             )}
           </div>
         </div>
+
+        {syncFeedbackMessage && (
+          <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 border animate-in fade-in slide-in-from-top-1 duration-200 ${
+            saveSuccess === true
+              ? 'bg-emerald-950/40 border-emerald-500/20 text-emerald-400'
+              : saveSuccess === false
+              ? 'bg-rose-950/40 border-rose-500/20 text-rose-400'
+              : 'bg-zinc-900 border-zinc-800 text-blue-400'
+          }`}>
+            {isSavingCloud ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            ) : saveSuccess === true ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : saveSuccess === false ? (
+              <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+            ) : (
+              <Cloud className="w-3.5 h-3.5 text-blue-400" />
+            )}
+            <span>{syncFeedbackMessage}</span>
+          </div>
+        )}
 
         {/* Dashboard-Style Button Control Panel */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-zinc-950/60 p-3 rounded-2xl border border-zinc-800/85">

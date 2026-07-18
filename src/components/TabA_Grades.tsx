@@ -24,6 +24,27 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   const [bulkGradeValue, setBulkGradeValue] = useState('');
   const [bulkTarget, setBulkTarget] = useState<'all' | 'empty'>('all');
 
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
+
+  const handleSaveGrades = async () => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return;
+    setIsSaving(true);
+    setSaveSuccess(null);
+    try {
+      const success = await pushTeacherDataToCloud(activeUser, db, true);
+      setSaveSuccess(success);
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setSaveSuccess(false);
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   // Dialog States
   const [alertDialog, setAlertDialog] = useState<{
     isOpen: boolean;
@@ -687,12 +708,43 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 </button>
 
                 <button
+                  id="save-grades-cloud-btn"
+                  onClick={handleSaveGrades}
+                  disabled={isSaving}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition cursor-pointer shadow-sm ${
+                    saveSuccess === true
+                      ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                      : saveSuccess === false
+                      ? 'bg-rose-600/20 border-rose-500/40 text-rose-400'
+                      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-750'
+                  }`}
+                  title="Salvar todas as notas lançadas e sincronizar com o banco de dados em nuvem"
+                >
+                  {isSaving ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                  ) : saveSuccess === true ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Save className="w-3.5 h-3.5 text-blue-400" />
+                  )}
+                  <span>
+                    {isSaving
+                      ? 'Salvando...'
+                      : saveSuccess === true
+                      ? 'Salvo!'
+                      : saveSuccess === false
+                      ? 'Erro'
+                      : 'Salvar Notas'}
+                  </span>
+                </button>
+
+                <button
                   id="bulk-fill-btn"
                   onClick={() => {
                     setBulkFillOpen(!bulkFillOpen);
                     setEditingDesc(false);
                   }}
-                  className="px-3 py-1.5 bg-zinc-850 hover:bg-zinc-750 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-700 transition cursor-pointer hover:border-zinc-500 shadow-sm"
+                  className="px-3 py-1.5 bg-zinc-855 hover:bg-zinc-750 text-zinc-100 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-zinc-700 transition cursor-pointer hover:border-zinc-500 shadow-sm"
                   title="Lançamento rápido e preenchimento em lote das notas do bimestre"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -858,9 +910,9 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                     const isBelowAverage = hasGrades && media < 7.0;
 
                     return (
-                      <tr key={student.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs">{student.rollNumber}</td>
-                        <td className="py-3 px-4 font-medium text-zinc-200">{student.name}</td>
+                      <tr key={student.id} className="hover:bg-white/5 focus-within:bg-zinc-850/90 focus-within:ring-1 focus-within:ring-zinc-700 transition-all duration-150 group">
+                        <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs group-focus-within:text-zinc-300">{student.rollNumber}</td>
+                        <td className="py-3 px-4 font-medium text-zinc-200 group-focus-within:text-blue-400 group-focus-within:font-bold transition-colors">{student.name}</td>
                         
                         {/* T1 */}
                         <td className="py-2 px-1 text-center">
@@ -994,9 +1046,9 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 ) : (
                   students.map((student, idx) => {
                     return (
-                      <tr key={student.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs">{student.rollNumber}</td>
-                        <td className="py-3 px-4 font-medium text-zinc-200">{student.name}</td>
+                      <tr key={student.id} className="hover:bg-white/5 focus-within:bg-zinc-850/90 focus-within:ring-1 focus-within:ring-zinc-700 transition-all duration-150 group">
+                        <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs group-focus-within:text-zinc-300">{student.rollNumber}</td>
+                        <td className="py-3 px-4 font-medium text-zinc-200 group-focus-within:text-blue-400 group-focus-within:font-bold transition-colors">{student.name}</td>
                         
                         {/* Rec Sem 1 */}
                         <td className="py-2 px-3 text-center">

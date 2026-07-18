@@ -17,7 +17,7 @@ import {
 } from './types';
 import { syncSingleRecord, pushTeacherDataToCloud } from './firebase';
 
-export let isCloudSyncDisabled = false;
+export let isCloudSyncDisabled = true; // Disabled by default to prioritize manual save buttons and avoid exhausting Firestore quota
 export function setCloudSyncDisabled(val: boolean) {
   isCloudSyncDisabled = val;
 }

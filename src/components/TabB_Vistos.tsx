@@ -2,7 +2,8 @@ import { useState, FormEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, VistoColumn, StudentVisto } from '../types';
-import { Plus, Trash2, Calendar, FileSpreadsheet, AlertTriangle, CheckSquare, Square, Info } from 'lucide-react';
+import { Plus, Trash2, Calendar, FileSpreadsheet, AlertTriangle, CheckSquare, Square, Info, Save, RefreshCw, Check } from 'lucide-react';
+import { pushTeacherDataToCloud } from '../firebase';
 
 interface TabBVistosProps {
   schoolId: number | undefined;
@@ -16,6 +17,27 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, is
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [newColDate, setNewColDate] = useState(new Date().toISOString().split('T')[0]);
   const [newColTitle, setNewColTitle] = useState('');
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
+
+  const handleSaveVistos = async () => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser) return;
+    setIsSaving(true);
+    setSaveSuccess(null);
+    try {
+      const success = await pushTeacherDataToCloud(activeUser, db, true);
+      setSaveSuccess(success);
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setSaveSuccess(false);
+      setTimeout(() => setSaveSuccess(null), 3000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // Query students
   const students = useLiveQuery(async () => {
@@ -180,6 +202,37 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, is
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            id="save-vistos-cloud-btn"
+            onClick={handleSaveVistos}
+            disabled={isSaving}
+            className={`px-3.5 py-2 font-semibold text-xs rounded-xl border flex items-center gap-1.5 transition cursor-pointer ${
+              saveSuccess === true
+                ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                : saveSuccess === false
+                ? 'bg-rose-600/20 border-rose-500/40 text-rose-400'
+                : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border-zinc-700/80'
+            }`}
+            title="Salvar vistos lançados e sincronizar com o banco de dados na Nuvem"
+          >
+            {isSaving ? (
+              <RefreshCw className="w-4 h-4 animate-spin text-zinc-400" />
+            ) : saveSuccess === true ? (
+              <Check className="w-4 h-4 text-emerald-400" />
+            ) : (
+              <Save className="w-4 h-4 text-blue-400" />
+            )}
+            <span>
+              {isSaving
+                ? 'Salvando...'
+                : saveSuccess === true
+                ? 'Salvo!'
+                : saveSuccess === false
+                ? 'Erro'
+                : 'Salvar Vistos'}
+            </span>
+          </button>
+
           <button
             id="export-vistos-csv-btn"
             onClick={handleExportCSV}

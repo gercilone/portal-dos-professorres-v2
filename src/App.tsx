@@ -13,7 +13,7 @@ import CoordGlobalSubjects from './components/CoordGlobalSubjects';
 import CoordBackups from './components/CoordBackups';
 import { sortClasses } from './types';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from './utils/deduplicate';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   deleteProfessorFromCloud,
@@ -24,7 +24,13 @@ import {
   syncProfessorsListInCloud,
   pullTeacherDataFromCloud,
   pushTeacherDataToCloud,
-  getFirestoreInstance
+  getFirestoreInstance,
+  getGlobalSchools,
+  getGlobalClasses,
+  getGlobalStudents,
+  getGlobalSubjects,
+  getGlobalWorkloads,
+  pushGlobalDataToCloud
 } from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -173,6 +179,73 @@ export default function App() {
       setIsCloudFallbackActive(true);
       window.dispatchEvent(new Event('storage'));
       alert("A nuvem ainda está inacessível ou o limite diário de uso não foi reiniciado. O modo offline seguro continuará ativo.");
+    }
+  };
+
+  // COORDINATOR MANUAL SAVE/SYNC STATE
+  const [isSavingCoord, setIsSavingCoord] = useState(false);
+  const [saveCoordSuccess, setSaveCoordSuccess] = useState<boolean | null>(null);
+  const [coordFeedbackMsg, setCoordFeedbackMsg] = useState<string>('');
+
+  const handleCoordManualSync = async () => {
+    setIsSavingCoord(true);
+    setSaveCoordSuccess(null);
+    setCoordFeedbackMsg('Sincronizando dados com a nuvem...');
+    try {
+      // 1. Reconnect if currently in fallback
+      localStorage.setItem('portal_cloud_fallback', 'false');
+      setIsCloudFallbackActive(false);
+      window.dispatchEvent(new Event('storage'));
+
+      // 1.5. Push local additions first so they are not overwritten!
+      setCoordFeedbackMsg('Salvando alterações locais na nuvem...');
+      const pushSuccess = await pushGlobalDataToCloud(true);
+      if (!pushSuccess) {
+        console.warn('Could not push some local global data (maybe offline/quota). Continuing sync...');
+      }
+
+      // 2. Fetch all list data from cloud
+      setCoordFeedbackMsg('Buscando dados mais recentes da nuvem...');
+      const [schs, cls, stds, subs, wls] = await Promise.all([
+        getGlobalSchools(),
+        getGlobalClasses(),
+        getGlobalStudents(),
+        getGlobalSubjects(),
+        getGlobalWorkloads()
+      ]);
+
+      // 3. Save to localStorage cache so they are 100% locally available in all tabs
+      localStorage.setItem('portal_global_schools', JSON.stringify(schs));
+      localStorage.setItem('portal_global_classes', JSON.stringify(cls));
+      localStorage.setItem('portal_global_students', JSON.stringify(stds));
+      localStorage.setItem('portal_global_subjects', JSON.stringify(subs));
+      localStorage.setItem('portal_global_workloads', JSON.stringify(wls));
+
+      // 4. Also sync profiles
+      await syncCoordinatorsListInCloud();
+      await syncProfessorsListInCloud();
+
+      setSaveCoordSuccess(true);
+      setCoordFeedbackMsg('Tudo salvo e sincronizado com a nuvem com sucesso!');
+
+      window.dispatchEvent(new Event('storage'));
+
+      setTimeout(() => {
+        setSaveCoordSuccess(null);
+        setCoordFeedbackMsg('');
+        window.location.reload();
+      }, 3000);
+
+    } catch (err) {
+      console.error('Error on coordinator manual sync:', err);
+      setSaveCoordSuccess(false);
+      setCoordFeedbackMsg('Erro na sincronização: cota excedida ou sem internet.');
+      setTimeout(() => {
+        setSaveCoordSuccess(null);
+        setCoordFeedbackMsg('');
+      }, 3000);
+    } finally {
+      setIsSavingCoord(false);
     }
   };
   const [coordinators, setCoordinators] = useState<any[]>(() => {
@@ -1542,6 +1615,40 @@ export default function App() {
                 </select>
               </div>
 
+              {/* Coordinator Save/Sync Button */}
+              <button
+                type="button"
+                onClick={handleCoordManualSync}
+                disabled={isSavingCoord}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 transition cursor-pointer select-none ${
+                  saveCoordSuccess === true
+                    ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                    : saveCoordSuccess === false
+                    ? 'bg-rose-600/20 border-rose-500/40 text-rose-400'
+                    : 'bg-amber-600 hover:bg-amber-500 border-amber-500/30 text-white shadow-sm'
+                }`}
+                title="Salvar alterações e sincronizar todas as turmas, alunos e disciplinas globais com a Nuvem"
+              >
+                {isSavingCoord ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : saveCoordSuccess === true ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : saveCoordSuccess === false ? (
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                ) : (
+                  <Cloud className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isSavingCoord
+                    ? 'Salvando...'
+                    : saveCoordSuccess === true
+                    ? 'Salvo!'
+                    : saveCoordSuccess === false
+                    ? 'Erro ao Salvar'
+                    : 'Salvar na Nuvem'}
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleLogout}
@@ -1552,6 +1659,25 @@ export default function App() {
             </div>
           </div>
         </header>
+
+        {coordFeedbackMsg && (
+          <div className={`border-b px-4 py-2 text-center text-xs font-bold select-none flex items-center justify-center gap-2 animate-in slide-in-from-top duration-200 ${
+            saveCoordSuccess === true
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              : saveCoordSuccess === false
+              ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+              : 'bg-zinc-900 border-zinc-800 text-amber-400'
+          }`}>
+            {isSavingCoord ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-400" />
+            ) : saveCoordSuccess === true ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Cloud className="w-3.5 h-3.5 text-amber-400" />
+            )}
+            <span>{coordFeedbackMsg}</span>
+          </div>
+        )}
 
         {isCloudFallbackActive && (
           <div className="bg-amber-500/10 border-b border-amber-500/25 px-4 py-3 text-center text-xs text-amber-400 select-none flex flex-col sm:flex-row items-center justify-center gap-3 animate-in slide-in-from-top duration-300">
@@ -1978,7 +2104,7 @@ export default function App() {
           <div className="flex items-center gap-2">
             <span className="inline-block w-2 h-2 bg-amber-500 rounded-full animate-ping shrink-0" />
             <span className="text-left">
-              <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente neste navegador!
+              <strong>Modo Local Ativo:</strong> O limite de gravação diário da nuvem foi atingido ou o sistema está offline. Suas alterações foram salvas com segurança localmente! Você pode verificar sua cota ou atualizar no <a href="https://console.firebase.google.com/project/gen-lang-client-0494910380/firestore/databases/ai-studio-portaldoprofesso-88cc5f2b-8d66-4292-a534-47f46152a3ba/data?openUpgradeDialog=true" target="_blank" rel="noopener noreferrer" className="underline font-bold hover:text-amber-300">Console do Firebase</a>.
             </span>
           </div>
           <button
