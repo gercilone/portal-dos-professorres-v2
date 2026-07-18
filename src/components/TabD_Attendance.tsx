@@ -386,6 +386,38 @@ export default function TabDAttendance({
     }
   };
 
+  // Persists changes to the lesson/class count record
+  const handleUpdateLessonCount = async (count: number) => {
+    setLessonCount(count);
+    setIsSaved(false);
+    if (!classId || !subjectId || !selectedDate) return;
+    
+    try {
+      const targetClassId = Number(classId);
+      const targetSubjectId = Number(subjectId);
+      const targetBimonthly = Number(bimonthly);
+      
+      const existing = await db.lessons
+        .filter(l => Number(l.classId) === targetClassId && Number(l.subjectId) === targetSubjectId && l.date === selectedDate && Number(l.bimonthly) === targetBimonthly)
+        .first();
+        
+      if (existing) {
+        await db.lessons.update(existing.id!, { lessonCount: count });
+      } else {
+        await db.lessons.add({
+          classId: targetClassId,
+          subjectId: targetSubjectId,
+          date: selectedDate,
+          bimonthly: targetBimonthly,
+          lessonCount: count,
+          content: '',
+        });
+      }
+    } catch (err) {
+      console.error('Error auto-updating lesson count:', err);
+    }
+  };
+
   // Update absences for a student
   const handleSetAbsences = async (studentId: number, count: number) => {
     try {
@@ -553,20 +585,43 @@ export default function TabDAttendance({
               </p>
             </div>
 
-            <div className="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800 focus-within:border-zinc-700 transition">
-              <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Data da Chamada:</span>
-              <input
-                id="attendance-date-select-header"
-                type="date"
-                disabled={isReadOnly}
-                value={selectedDate}
-                onChange={(e) => {
-                  setSelectedDate(e.target.value);
-                  setIsSaved(false);
-                }}
-                className="bg-transparent border-none text-zinc-300 font-bold font-mono text-xs focus:ring-0 p-0 cursor-pointer w-[115px] focus:outline-none"
-                style={{ colorScheme: 'dark' }}
-              />
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Data da Chamada */}
+              <div className="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800 focus-within:border-zinc-700 transition">
+                <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Data:</span>
+                <input
+                  id="attendance-date-select-header"
+                  type="date"
+                  disabled={isReadOnly}
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setIsSaved(false);
+                  }}
+                  className="bg-transparent border-none text-zinc-300 font-bold font-mono text-xs focus:ring-0 p-0 cursor-pointer w-[115px] focus:outline-none"
+                  style={{ colorScheme: 'dark' }}
+                />
+              </div>
+
+              {/* Quantidade de Aulas */}
+              <div className="flex items-center gap-1.5 bg-zinc-950 px-2.5 py-1.5 rounded-lg border border-zinc-800 focus-within:border-zinc-700 transition">
+                <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Aulas:</span>
+                <select
+                  id="attendance-lesson-count-select-header"
+                  value={lessonCount}
+                  disabled={isReadOnly}
+                  onChange={(e) => {
+                    handleUpdateLessonCount(parseInt(e.target.value));
+                  }}
+                  className="bg-transparent border-none text-zinc-300 font-bold font-mono text-xs focus:ring-0 p-0 pr-6 cursor-pointer focus:outline-none w-[75px]"
+                  style={{ colorScheme: 'dark' }}
+                >
+                  <option value={1}>1 Aula</option>
+                  <option value={2}>2 Aulas</option>
+                  <option value={3}>3 Aulas</option>
+                  <option value={4}>4 Aulas</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -700,8 +755,7 @@ export default function TabDAttendance({
                 value={lessonCount}
                 disabled={isReadOnly}
                 onChange={(e) => {
-                  setLessonCount(parseInt(e.target.value));
-                  setIsSaved(false);
+                  handleUpdateLessonCount(parseInt(e.target.value));
                 }}
                 className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2.5 w-full focus:ring-1 focus:ring-blue-500 focus:outline-none cursor-pointer disabled:opacity-60 disabled:pointer-events-none"
               >
