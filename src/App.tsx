@@ -30,7 +30,8 @@ import {
   getGlobalStudents,
   getGlobalSubjects,
   getGlobalWorkloads,
-  pushGlobalDataToCloud
+  pushGlobalDataToCloud,
+  testFirestoreConnection
 } from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -163,18 +164,21 @@ export default function App() {
     window.dispatchEvent(new Event('storage'));
     
     try {
-      const dbInstance = getFirestoreInstance();
-      if (dbInstance) {
+      const connTest = await testFirestoreConnection();
+      if (connTest.success) {
         // Try to fetch coordinators list to check actual connection
         await syncCoordinatorsListInCloud();
         alert("Excelente! Conexão com a nuvem restabelecida com sucesso. O sistema voltou ao modo online.");
       } else {
+        const errorMsg = connTest.error instanceof Error ? connTest.error.message : String(connTest.error);
+        console.error("Firestore connectivity test failed:", connTest.error);
         localStorage.setItem('portal_cloud_fallback', 'true');
         setIsCloudFallbackActive(true);
         window.dispatchEvent(new Event('storage'));
-        alert("Ainda não foi possível conectar com a nuvem. O sistema continuará no modo offline seguro temporariamente.");
+        alert(`Não foi possível conectar com a nuvem.\n\nDetalhes do Erro:\n${errorMsg}\n\nO sistema continuará no modo offline seguro temporariamente.`);
       }
-    } catch (e) {
+    } catch (e: any) {
+      console.error("Uncaught error during reconnect:", e);
       localStorage.setItem('portal_cloud_fallback', 'true');
       setIsCloudFallbackActive(true);
       window.dispatchEvent(new Event('storage'));

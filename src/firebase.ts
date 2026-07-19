@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDocFromServer,
   setDoc,
   deleteDoc,
   writeBatch,
@@ -104,6 +105,21 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number = 8000): Promise<
 // Helper to check if we are in local fallback mode
 export function isCloudFallback(): boolean {
   return localStorage.getItem('portal_cloud_fallback') === 'true';
+}
+
+// Test connectivity to Firestore directly bypassing cache
+export async function testFirestoreConnection(): Promise<{ success: boolean; error?: any }> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    return { success: false, error: new Error("Instância do Firestore não pôde ser inicializada.") };
+  }
+  try {
+    const testDocRef = doc(dbInstance, 'coordinators', '_connectivity_test_');
+    await withTimeout(getDocFromServer(testDocRef), 4000);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err };
+  }
 }
 
 // Helper to handle Firestore quota or writing errors and automatically trigger local fallback
