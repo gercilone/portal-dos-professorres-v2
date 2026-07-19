@@ -222,6 +222,11 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
     try {
       await db.transaction('rw', [db.bimonthlyGrades], async () => {
         for (const student of students) {
+          // Skip inactive students
+          if (student.active === false) {
+            continue;
+          }
+
           const studentId = student.id!;
           const existingGrade = grades.find((g) => g.studentId === studentId);
           
