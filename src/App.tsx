@@ -196,8 +196,8 @@ export default function App() {
       }
     };
 
-    // Set up periodic checker every 25 seconds
-    intervalId = setInterval(attemptAutoReconnect, 25000);
+    // Set up periodic checker every 10 seconds
+    intervalId = setInterval(attemptAutoReconnect, 10000);
 
     // Also trigger immediately when the browser's native online status changes to 'online'
     const handleOnline = () => {
