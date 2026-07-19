@@ -468,6 +468,8 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
     );
 
     setCloudFallbackStatus(false);
+    localStorage.removeItem('portal_has_unsaved_changes');
+    window.dispatchEvent(new Event('storage'));
     return true;
   } catch (error) {
     logFirebaseError(`Error pushing diary data for ${username}:`, error);

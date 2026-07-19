@@ -402,6 +402,7 @@ export default function App() {
 
   const handleLogout = async () => {
     sessionStorage.removeItem('portal_is_authenticated');
+    sessionStorage.removeItem('portal_session_sync_pulled');
     localStorage.removeItem('portal_is_authenticated_persistent');
     localStorage.removeItem('portal_active_user');
     localStorage.removeItem('portal_active_user_db');
@@ -416,6 +417,7 @@ export default function App() {
     localStorage.removeItem('portal_security_question');
     localStorage.removeItem('portal_security_answer');
     localStorage.removeItem('portal_initial_sync_done');
+    localStorage.removeItem('portal_has_unsaved_changes');
     
     // Clear IndexedDB local database tables on logout
     try {
@@ -562,6 +564,7 @@ export default function App() {
           
           if (pullSuccess) {
             localStorage.setItem('portal_initial_sync_done', 'true');
+            sessionStorage.setItem('portal_session_sync_pulled', 'true');
             // Seed default demo data ONLY if this is a completely blank account in cloud AND it's the default demo 'professor'
             const schoolCount = await db.schools.count();
             if (schoolCount === 0 && matchingProf.username.toLowerCase() === 'professor') {
@@ -1078,7 +1081,12 @@ export default function App() {
             const schoolCount = await db.schools.count();
             const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
             const initialSyncDone = localStorage.getItem('portal_initial_sync_done') === 'true';
-            const shouldPull = inspecting ? needsInspectPull : ((schoolCount === 0 && !initialSyncDone) || forcePull);
+            const sessionSyncPulled = sessionStorage.getItem('portal_session_sync_pulled') === 'true';
+            
+            // Auto-pull on startup if we are inspecting, if the local DB has no data, or if we haven't synced yet in this session
+            const shouldPull = inspecting 
+              ? needsInspectPull 
+              : (schoolCount === 0 || !initialSyncDone || forcePull || !sessionSyncPulled);
 
             if (shouldPull) {
               setIsInitialSyncing(true);
@@ -1088,6 +1096,7 @@ export default function App() {
 
               if (pullSuccess) {
                 localStorage.setItem('portal_initial_sync_done', 'true');
+                sessionStorage.setItem('portal_session_sync_pulled', 'true');
                 await deduplicateLocalDatabase(activeUser);
               }
 
@@ -1587,14 +1596,6 @@ export default function App() {
                 </button>
 
                 <div className="flex flex-col gap-2.5 items-center pt-3 border-t border-zinc-850 mt-3 text-center">
-                  <button
-                    type="button"
-                    onClick={handleDemoLogin}
-                    className="text-xs text-blue-400 hover:text-blue-300 hover:underline transition font-bold cursor-pointer"
-                  >
-                    Não tenho conta, ver demonstração
-                  </button>
-
                   <button
                     type="button"
                     onClick={handleOpenRecovery}

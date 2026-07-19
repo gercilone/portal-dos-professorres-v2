@@ -69,6 +69,10 @@ export class TeacherDatabase extends Dexie {
       const table = this.table(tableName);
 
       table.hook('creating', function(primKey, obj) {
+        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
+          localStorage.setItem('portal_has_unsaved_changes', 'true');
+          window.dispatchEvent(new Event('storage'));
+        }
         const activeUser = localStorage.getItem('portal_active_user');
         if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           this.onsuccess = function(actualKey) {
@@ -78,6 +82,10 @@ export class TeacherDatabase extends Dexie {
       });
 
       table.hook('updating', (mods, primKey, obj) => {
+        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
+          localStorage.setItem('portal_has_unsaved_changes', 'true');
+          window.dispatchEvent(new Event('storage'));
+        }
         const activeUser = localStorage.getItem('portal_active_user');
         if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           const updatedObj = { ...obj, ...mods };
@@ -88,6 +96,10 @@ export class TeacherDatabase extends Dexie {
       });
 
       table.hook('deleting', (primKey) => {
+        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
+          localStorage.setItem('portal_has_unsaved_changes', 'true');
+          window.dispatchEvent(new Event('storage'));
+        }
         const activeUser = localStorage.getItem('portal_active_user');
         if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
           setTimeout(() => {

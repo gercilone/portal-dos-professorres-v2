@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { School, Class, Subject, sortClasses } from '../types';
@@ -40,6 +40,18 @@ export default function HeaderFilters({
   fontSize = 'normal',
   setFontSize,
 }: HeaderFiltersProps) {
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(() => {
+    return localStorage.getItem('portal_has_unsaved_changes') === 'true';
+  });
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setHasUnsavedChanges(localStorage.getItem('portal_has_unsaved_changes') === 'true');
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
   const schools = useLiveQuery(() => db.schools.toArray()) || [];
   const classes = useLiveQuery(async () => {
     let list;
@@ -230,6 +242,8 @@ export default function HeaderFilters({
                   ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
                   : saveSuccess === false
                   ? 'bg-rose-600/20 border-rose-500/40 text-rose-400'
+                  : hasUnsavedChanges
+                  ? 'bg-amber-600 hover:bg-amber-500 border-amber-500/40 text-white animate-pulse shadow shadow-amber-500/20'
                   : 'bg-blue-600 hover:bg-blue-500 border-blue-500/30 text-white shadow shadow-blue-500/10'
               }`}
               title="Salvar todas as alterações na Nuvem (Notas, Chamadas, Vistos, etc.) e buscar novos alunos da coordenação"
@@ -250,6 +264,8 @@ export default function HeaderFilters({
                   ? 'Salvo!'
                   : saveSuccess === false
                   ? 'Erro ao Salvar'
+                  : hasUnsavedChanges
+                  ? 'Salvar Alterações (Nuvem)'
                   : 'Salvar Diário'}
               </span>
             </button>

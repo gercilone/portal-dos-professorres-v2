@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, BimonthlyGrade, AssignmentDescription, ExtraGrade } from '../types';
-import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload, Sparkles } from 'lucide-react';
+import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload, Sparkles, Trash2 } from 'lucide-react';
 import { pushTeacherDataToCloud } from '../firebase';
 
 interface TabAGradesProps {
@@ -271,6 +271,66 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
         message: 'Ocorreu um erro ao realizar o lançamento em lote.'
       });
     }
+  };
+
+  // CLEAR COLUMN GRADES
+  const handleClearColumnGrades = () => {
+    if (!classId || !subjectId) return;
+
+    let fieldLabel = '';
+    switch (bulkSelectedField) {
+      case 't1': fieldLabel = `T1 - ${tempDesc.t1 || 'Trabalho 1'}`; break;
+      case 't2': fieldLabel = `T2 - ${tempDesc.t2 || 'Trabalho 2'}`; break;
+      case 't3': fieldLabel = `T3 - ${tempDesc.t3 || 'Trabalho 3'}`; break;
+      case 't4': fieldLabel = `T4 - ${tempDesc.t4 || 'Trabalho 4'}`; break;
+      case 't5': fieldLabel = `T5 - ${tempDesc.t5 || 'Trabalho 5'}`; break;
+      case 'exam': fieldLabel = 'Prova - Avaliação Bimestral'; break;
+    }
+
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Limpar Notas do Trabalho',
+      message: `Tem certeza absoluta que deseja APAGAR todas as notas de "${fieldLabel}" para todos os alunos ativos desta turma? Essa ação removerá as notas de toda a coluna e não poderá ser desfeita.`,
+      confirmText: 'Sim, Apagar Tudo',
+      cancelText: 'Cancelar',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await db.transaction('rw', [db.bimonthlyGrades], async () => {
+            for (const student of students) {
+              if (student.active === false) {
+                continue;
+              }
+              const studentId = student.id!;
+              const existingGrade = grades.find((g) => g.studentId === studentId);
+              if (existingGrade) {
+                await db.bimonthlyGrades.update(existingGrade.id!, { [bulkSelectedField]: undefined });
+              }
+            }
+          });
+
+          // Sync with cloud if logged in
+          const activeUser = localStorage.getItem('portal_active_user');
+          if (activeUser) {
+            await pushTeacherDataToCloud(activeUser, db);
+          }
+
+          setBulkFillOpen(false);
+          setAlertDialog({
+            isOpen: true,
+            title: 'Limpeza Concluída',
+            message: `As notas de "${fieldLabel}" foram limpas com sucesso!`
+          });
+        } catch (err) {
+          console.error('Error during clearing column grades:', err);
+          setAlertDialog({
+            isOpen: true,
+            title: 'Erro',
+            message: 'Ocorreu um erro ao limpar as notas.'
+          });
+        }
+      }
+    });
   };
 
   // EXPORTAR NOTAS BIMESTRAIS PARA CSV
@@ -887,7 +947,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 </div>
 
                 {/* 4. Ações */}
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-2 flex-wrap sm:flex-nowrap">
                   <button
                     id="apply-bulk-fill-btn"
                     type="button"
@@ -897,6 +957,20 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                     <Check className="w-3.5 h-3.5" />
                     Aplicar em Lote
                   </button>
+
+                  {!isReadOnly && (
+                    <button
+                      id="clear-column-grades-btn"
+                      type="button"
+                      onClick={handleClearColumnGrades}
+                      className="px-3 py-1.5 bg-rose-950/40 hover:bg-rose-900/30 text-rose-400 border border-rose-900/40 text-xs rounded-lg font-semibold flex items-center justify-center gap-1.5 shadow transition cursor-pointer h-[34px]"
+                      title="Apagar todas as notas da coluna selecionada"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Limpar Notas
+                    </button>
+                  )}
+
                   <button
                     id="cancel-bulk-fill-btn"
                     type="button"
@@ -967,6 +1041,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t1-${student.id}`}
+                            key={`grade-t1-${student.id}-${getGradeValue(student.id!, 't1')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't1')}
@@ -981,6 +1056,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t2-${student.id}`}
+                            key={`grade-t2-${student.id}-${getGradeValue(student.id!, 't2')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't2')}
@@ -995,6 +1071,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t3-${student.id}`}
+                            key={`grade-t3-${student.id}-${getGradeValue(student.id!, 't3')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't3')}
@@ -1009,6 +1086,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t4-${student.id}`}
+                            key={`grade-t4-${student.id}-${getGradeValue(student.id!, 't4')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't4')}
@@ -1023,6 +1101,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t5-${student.id}`}
+                            key={`grade-t5-${student.id}-${getGradeValue(student.id!, 't5')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't5')}
@@ -1037,6 +1116,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-exam-${student.id}`}
+                            key={`grade-exam-${student.id}-${getGradeValue(student.id!, 'exam')}`}
                             type="text"
                             disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 'exam')}
