@@ -31,7 +31,8 @@ import {
   getGlobalSubjects,
   getGlobalWorkloads,
   pushGlobalDataToCloud,
-  testFirestoreConnection
+  testFirestoreConnection,
+  forceEnableNetworkAndTest
 } from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -149,6 +150,7 @@ export default function App() {
   const [isCloudFallbackActive, setIsCloudFallbackActive] = useState(() => {
     return localStorage.getItem('portal_cloud_fallback') === 'true';
   });
+  const [autoReconnectToast, setAutoReconnectToast] = useState<string | null>(null);
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -157,6 +159,58 @@ export default function App() {
     window.addEventListener('storage', handleStorageChange);
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
+
+  // Automatic background reconnection logic when offline fallback is active
+  useEffect(() => {
+    if (!isCloudFallbackActive) return;
+
+    let intervalId: any;
+    let isChecking = false;
+
+    const attemptAutoReconnect = async () => {
+      if (isChecking) return;
+      isChecking = true;
+      console.log("[Auto-Reconnect] Tentando restabelecer conexão com o Firestore em segundo plano...");
+      
+      try {
+        const connTest = await forceEnableNetworkAndTest();
+        if (connTest.success) {
+          console.log("[Auto-Reconnect] Conexão restaurada com sucesso!");
+          localStorage.setItem('portal_cloud_fallback', 'false');
+          setIsCloudFallbackActive(false);
+          window.dispatchEvent(new Event('storage'));
+          
+          try {
+            await syncCoordinatorsListInCloud();
+          } catch (e) {
+            console.warn("[Auto-Reconnect] Falha ao sincronizar coordenadores:", e);
+          }
+          
+          setAutoReconnectToast("Conexão com a nuvem restabelecida automaticamente! O sistema voltou ao modo online.");
+          setTimeout(() => setAutoReconnectToast(null), 6000);
+        }
+      } catch (err) {
+        console.warn("[Auto-Reconnect] Falha na tentativa de reconexão automática:", err);
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    // Set up periodic checker every 25 seconds
+    intervalId = setInterval(attemptAutoReconnect, 25000);
+
+    // Also trigger immediately when the browser's native online status changes to 'online'
+    const handleOnline = () => {
+      console.log("[Auto-Reconnect] Navegador online detectado. Forçando teste de conexão...");
+      attemptAutoReconnect();
+    };
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [isCloudFallbackActive]);
 
   const handleTryReconnectCloud = async () => {
     localStorage.setItem('portal_cloud_fallback', 'false');
@@ -2216,6 +2270,25 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {autoReconnectToast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-emerald-950 border border-emerald-500/30 text-emerald-300 rounded-2xl p-4 shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom duration-300">
+          <div className="bg-emerald-500/20 p-2 rounded-xl shrink-0">
+            <Cloud className="w-5 h-5 text-emerald-400 animate-pulse" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="font-bold text-xs text-white">Modo Online Ativo</h4>
+            <p className="text-[11px] mt-0.5 leading-snug">{autoReconnectToast}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutoReconnectToast(null)}
+            className="text-emerald-400 hover:text-emerald-200 ml-auto shrink-0 transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
     </div>
   );

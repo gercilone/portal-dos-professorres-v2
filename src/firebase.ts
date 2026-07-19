@@ -9,7 +9,8 @@ import {
   setDoc,
   deleteDoc,
   writeBatch,
-  setLogLevel
+  setLogLevel,
+  enableNetwork
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -117,6 +118,24 @@ export async function testFirestoreConnection(): Promise<{ success: boolean; err
     const testDocRef = doc(dbInstance, 'coordinators', '_connectivity_test_');
     await withTimeout(getDocFromServer(testDocRef), 4000);
     return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err };
+  }
+}
+
+// Force network re-enable and test connection
+export async function forceEnableNetworkAndTest(): Promise<{ success: boolean; error?: any }> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    return { success: false, error: new Error("Instância do Firestore não pôde ser inicializada.") };
+  }
+  try {
+    try {
+      await enableNetwork(dbInstance);
+    } catch (netErr) {
+      console.warn("Could not explicitly enableNetwork, trying standard check:", netErr);
+    }
+    return await testFirestoreConnection();
   } catch (err: any) {
     return { success: false, error: err };
   }
