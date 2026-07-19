@@ -399,6 +399,10 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
           }
 
           if (matchedStudent && matchedStudent.id) {
+            if (matchedStudent.active === false) {
+              continue;
+            }
+
             const t1 = t1Idx !== -1 ? parseGradeValue(columns[t1Idx]) : undefined;
             const t2 = t2Idx !== -1 ? parseGradeValue(columns[t2Idx]) : undefined;
             const t3 = t3Idx !== -1 ? parseGradeValue(columns[t3Idx]) : undefined;
