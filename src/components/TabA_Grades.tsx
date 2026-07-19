@@ -508,40 +508,60 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
       
       // Find current student index
       const idx = students.findIndex((s) => s.id === studentId);
-      if (idx !== -1 && idx < students.length - 1) {
-        const nextStudent = students[idx + 1];
-        // Focus the next student's input for the same field
-        const nextInputId = field.startsWith('rec') || field === 'finalExam'
-          ? `grade-${field.toLowerCase()}-${nextStudent.id}`
-          : `grade-${field}-${nextStudent.id}`;
-        
-        const nextInput = document.getElementById(nextInputId) as HTMLInputElement | null;
-        if (nextInput) {
-          nextInput.focus();
-          nextInput.select();
+      if (idx !== -1) {
+        // Find next active student
+        let nextActiveStudent: Student | undefined = undefined;
+        for (let i = idx + 1; i < students.length; i++) {
+          if (students[i].active !== false) {
+            nextActiveStudent = students[i];
+            break;
+          }
         }
-      } else {
-        // If last student, blur current input to trigger save and finish
-        (e.target as HTMLInputElement).blur();
+
+        if (nextActiveStudent) {
+          // Focus the next student's input for the same field
+          const nextInputId = field.startsWith('rec') || field === 'finalExam'
+            ? `grade-${field.toLowerCase()}-${nextActiveStudent.id}`
+            : `grade-${field}-${nextActiveStudent.id}`;
+          
+          const nextInput = document.getElementById(nextInputId) as HTMLInputElement | null;
+          if (nextInput) {
+            nextInput.focus();
+            nextInput.select();
+          }
+        } else {
+          // If no further active student, blur current input to trigger save and finish
+          (e.target as HTMLInputElement).blur();
+        }
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       
       const idx = students.findIndex((s) => s.id === studentId);
-      if (idx > 0) {
-        const prevStudent = students[idx - 1];
-        const prevInputId = field.startsWith('rec') || field === 'finalExam'
-          ? `grade-${field.toLowerCase()}-${prevStudent.id}`
-          : `grade-${field}-${prevStudent.id}`;
-        
-        const prevInput = document.getElementById(prevInputId) as HTMLInputElement | null;
-        if (prevInput) {
-          prevInput.focus();
-          prevInput.select();
+      if (idx !== -1) {
+        // Find previous active student
+        let prevActiveStudent: Student | undefined = undefined;
+        for (let i = idx - 1; i >= 0; i--) {
+          if (students[i].active !== false) {
+            prevActiveStudent = students[i];
+            break;
+          }
         }
-      } else {
-        // If first student, just blur
-        (e.target as HTMLInputElement).blur();
+
+        if (prevActiveStudent) {
+          const prevInputId = field.startsWith('rec') || field === 'finalExam'
+            ? `grade-${field.toLowerCase()}-${prevActiveStudent.id}`
+            : `grade-${field}-${prevActiveStudent.id}`;
+          
+          const prevInput = document.getElementById(prevInputId) as HTMLInputElement | null;
+          if (prevInput) {
+            prevInput.focus();
+            prevInput.select();
+          }
+        } else {
+          // If no previous active student, just blur
+          (e.target as HTMLInputElement).blur();
+        }
       }
     }
   };
