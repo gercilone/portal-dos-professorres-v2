@@ -886,15 +886,15 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
             <table id="grades-table" className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-zinc-900 border-b border-zinc-800 text-zinc-400 text-xs font-semibold select-none">
-                  <th className="py-4 px-3 w-12 text-center">Nº</th>
-                  <th className="py-4 px-4 min-w-[180px]">Nome do Aluno</th>
-                  <th className="py-4 px-2 text-center w-18" title={t1Label}>{t1Label.length > 10 ? t1Label.substring(0, 8) + '..' : t1Label}<span className="block text-[9px] text-zinc-500 font-normal">T1</span></th>
-                  <th className="py-4 px-2 text-center w-18" title={t2Label}>{t2Label.length > 10 ? t2Label.substring(0, 8) + '..' : t2Label}<span className="block text-[9px] text-zinc-500 font-normal">T2</span></th>
-                  <th className="py-4 px-2 text-center w-18" title={t3Label}>{t3Label.length > 10 ? t3Label.substring(0, 8) + '..' : t3Label}<span className="block text-[9px] text-zinc-500 font-normal">T3</span></th>
-                  <th className="py-4 px-2 text-center w-18" title={t4Label}>{t4Label.length > 10 ? t4Label.substring(0, 8) + '..' : t4Label}<span className="block text-[9px] text-zinc-500 font-normal">T4</span></th>
-                  <th className="py-4 px-2 text-center w-18" title={t5Label}>{t5Label.length > 10 ? t5Label.substring(0, 8) + '..' : t5Label}<span className="block text-[9px] text-zinc-500 font-normal">T5</span></th>
-                  <th className="py-4 px-2 text-center w-18">Prova<span className="block text-[9px] text-zinc-500 font-normal">Fim</span></th>
-                  <th className="py-4 px-3 text-center w-24 bg-blue-950/20 text-blue-400 font-bold border-l border-zinc-800">Média Final</th>
+                  <th className="py-3 px-3 w-12 text-center align-top">Nº</th>
+                  <th className="py-3 px-4 min-w-[180px] align-top">Nome do Aluno</th>
+                  <th className="py-3 px-1 text-center w-24 min-w-[96px] whitespace-normal break-words leading-tight align-top" title={t1Label}>{t1Label}<span className="block text-[9px] text-zinc-500 font-normal mt-1">T1</span></th>
+                  <th className="py-3 px-1 text-center w-24 min-w-[96px] whitespace-normal break-words leading-tight align-top" title={t2Label}>{t2Label}<span className="block text-[9px] text-zinc-500 font-normal mt-1">T2</span></th>
+                  <th className="py-3 px-1 text-center w-24 min-w-[96px] whitespace-normal break-words leading-tight align-top" title={t3Label}>{t3Label}<span className="block text-[9px] text-zinc-500 font-normal mt-1">T3</span></th>
+                  <th className="py-3 px-1 text-center w-24 min-w-[96px] whitespace-normal break-words leading-tight align-top" title={t4Label}>{t4Label}<span className="block text-[9px] text-zinc-500 font-normal mt-1">T4</span></th>
+                  <th className="py-3 px-1 text-center w-24 min-w-[96px] whitespace-normal break-words leading-tight align-top" title={t5Label}>{t5Label}<span className="block text-[9px] text-zinc-500 font-normal mt-1">T5</span></th>
+                  <th className="py-3 px-1 text-center w-20 min-w-[80px] whitespace-normal break-words leading-tight align-top">Prova<span className="block text-[9px] text-zinc-500 font-normal mt-1">Fim</span></th>
+                  <th className="py-3 px-3 text-center w-24 bg-blue-950/20 text-blue-400 font-bold border-l border-zinc-800 align-top">Média Final</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/60 text-sm">
