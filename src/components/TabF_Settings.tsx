@@ -383,18 +383,27 @@ export default function TabFSettings({
       const currentLocalStudents = await db.students.where({ classId: localClassId }).toArray();
 
       for (const st of classStudents) {
-        const studentExists = currentLocalStudents.some(
+        const localStudent = currentLocalStudents.find(
           localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
         );
 
-        if (!studentExists) {
+        if (!localStudent) {
           await db.students.add({
             classId: localClassId,
             name: st.name,
-            rollNumber: st.rollNumber
+            rollNumber: st.rollNumber,
+            active: st.active !== undefined ? st.active : true
           });
           addedCount++;
         } else {
+          const currentActive = localStudent.active !== false;
+          const newActive = st.active !== false;
+          if (currentActive !== newActive || localStudent.rollNumber !== st.rollNumber) {
+            await db.students.update(localStudent.id!, {
+              rollNumber: st.rollNumber,
+              active: newActive
+            });
+          }
           skippedCount++;
         }
       }
@@ -3749,10 +3758,23 @@ export default function TabFSettings({
                     .filter(st => String(st.classId) === String(selectedClassIdForStudent))
                     .map((st) => (
                       <div key={st.id} className="flex items-center gap-3 bg-zinc-950/30 border border-zinc-850 rounded-xl px-3 py-2 text-xs hover:border-zinc-800 transition">
-                        <span className="font-mono text-[10px] font-bold text-amber-500 bg-amber-500/5 border border-amber-500/10 w-5.5 h-5.5 rounded flex items-center justify-center shrink-0">
+                        <span className={`font-mono text-[10px] font-bold w-5.5 h-5.5 rounded flex items-center justify-center shrink-0 border ${
+                          st.active !== false
+                            ? 'text-amber-500 bg-amber-500/5 border-amber-500/10'
+                            : 'text-zinc-600 bg-zinc-950 border-zinc-900/40'
+                        }`}>
                           {st.rollNumber}
                         </span>
-                        <span className="text-zinc-300 font-medium">{st.name}</span>
+                        <span className={`font-medium ${
+                          st.active !== false
+                            ? 'text-zinc-300'
+                            : 'text-zinc-500 line-through decoration-zinc-600'
+                        }`}>
+                          {st.name}
+                        </span>
+                        {st.active === false && (
+                          <span className="text-[9px] text-rose-400 font-semibold ml-auto">Matrícula Encerrada</span>
+                        )}
                       </div>
                     ))}
                   

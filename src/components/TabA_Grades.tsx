@@ -909,17 +909,37 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                     const { media, hasGrades } = calculateMedia(student.id!);
                     const isBelowAverage = hasGrades && media < 7.0;
 
+                    const isInactive = student.active === false;
+
                     return (
-                      <tr key={student.id} className="hover:bg-white/5 focus-within:bg-zinc-850/90 focus-within:ring-1 focus-within:ring-zinc-700 transition-all duration-150 group">
-                        <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs group-focus-within:text-zinc-300">{student.rollNumber}</td>
-                        <td className="py-3 px-4 font-medium text-zinc-200 group-focus-within:text-blue-400 group-focus-within:font-bold transition-colors">{student.name}</td>
+                      <tr 
+                        key={student.id} 
+                        className={`transition-all duration-150 group ${
+                          isInactive 
+                            ? 'bg-zinc-950/40 text-zinc-500 opacity-60 hover:bg-zinc-950/50' 
+                            : 'hover:bg-white/5 focus-within:bg-zinc-850/90 focus-within:ring-1 focus-within:ring-zinc-700'
+                        }`}
+                      >
+                        <td className={`py-3 px-3 text-center font-mono text-xs ${isInactive ? 'text-zinc-600' : 'text-zinc-500 group-focus-within:text-zinc-300'}`}>{student.rollNumber}</td>
+                        <td className="py-3 px-4 transition-colors">
+                          <span className={`font-medium block ${
+                            isInactive 
+                              ? 'text-zinc-500 line-through decoration-zinc-600' 
+                              : 'text-zinc-200 group-focus-within:text-blue-400 group-focus-within:font-bold'
+                          }`}>
+                            {student.name}
+                          </span>
+                          {isInactive && (
+                            <span className="text-[10px] text-rose-400 font-semibold block mt-0.5">Matrícula Encerrada</span>
+                          )}
+                        </td>
                         
                         {/* T1 */}
                         <td className="py-2 px-1 text-center">
                           <input
                             id={`grade-t1-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't1')}
                             onBlur={(e) => handleGradeBlur(student.id!, 't1', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't1')}
@@ -933,7 +953,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                           <input
                             id={`grade-t2-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't2')}
                             onBlur={(e) => handleGradeBlur(student.id!, 't2', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't2')}
@@ -947,7 +967,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                           <input
                             id={`grade-t3-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't3')}
                             onBlur={(e) => handleGradeBlur(student.id!, 't3', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't3')}
@@ -961,7 +981,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                           <input
                             id={`grade-t4-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't4')}
                             onBlur={(e) => handleGradeBlur(student.id!, 't4', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't4')}
@@ -975,7 +995,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                           <input
                             id={`grade-t5-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 't5')}
                             onBlur={(e) => handleGradeBlur(student.id!, 't5', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 't5')}
@@ -989,7 +1009,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                           <input
                             id={`grade-exam-${student.id}`}
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInactive}
                             defaultValue={getGradeValue(student.id!, 'exam')}
                             onBlur={(e) => handleGradeBlur(student.id!, 'exam', e.target.value)}
                             onKeyDown={(e) => handleKeyDown(e, student.id!, 'exam')}

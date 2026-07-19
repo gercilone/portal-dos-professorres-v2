@@ -672,12 +672,29 @@ export default function TabDAttendance({
                     const stats = getStudentCumulativeAttendance(student.id!);
                     
                     const isBelowAttendanceRequirement = stats.pct < 75;
+                    const isInactive = student.active === false;
 
                     return (
-                      <tr key={student.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="py-3 px-2 text-center text-zinc-500 font-mono">{student.rollNumber}</td>
-                        <td className="py-3 px-3 font-medium text-zinc-200">
-                          {student.name}
+                      <tr 
+                        key={student.id} 
+                        className={`transition-colors group ${
+                          isInactive 
+                            ? 'bg-zinc-950/40 text-zinc-500 opacity-60 hover:bg-zinc-950/50' 
+                            : 'hover:bg-white/5'
+                        }`}
+                      >
+                        <td className={`py-3 px-2 text-center font-mono ${isInactive ? 'text-zinc-650' : 'text-zinc-500'}`}>{student.rollNumber}</td>
+                        <td className="py-3 px-3 transition-colors">
+                          <span className={`font-medium block ${
+                            isInactive 
+                              ? 'text-zinc-500 line-through decoration-zinc-600' 
+                              : 'text-zinc-200'
+                          }`}>
+                            {student.name}
+                          </span>
+                          {isInactive && (
+                            <span className="text-[10px] text-rose-400 font-semibold block mt-0.5">Matrícula Encerrada</span>
+                          )}
                         </td>
                         
                         {/* Attendance Buttons Selection */}
@@ -698,8 +715,8 @@ export default function TabDAttendance({
                                   id={`set-absences-btn-${student.id}-${absIdx}`}
                                   key={absIdx}
                                   type="button"
-                                  disabled={isReadOnly}
-                                  onClick={() => !isReadOnly && handleSetAbsences(student.id!, absIdx)}
+                                  disabled={isReadOnly || isInactive}
+                                  onClick={() => !isReadOnly && !isInactive && handleSetAbsences(student.id!, absIdx)}
                                   className={`px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition disabled:pointer-events-none ${btnStyle}`}
                                   title={`${absIdx === 0 ? 'Presença Completa' : `${absIdx} Falta(s)`}`}
                                 >

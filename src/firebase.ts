@@ -640,6 +640,7 @@ export interface GlobalStudent {
   name: string;
   rollNumber: number;
   classId: string;
+  active?: boolean;
 }
 
 export async function getGlobalSchools(): Promise<GlobalSchool[]> {

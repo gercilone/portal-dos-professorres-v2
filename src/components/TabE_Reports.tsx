@@ -707,11 +707,15 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                     {students.map((st) => {
                       const row = getStudentGradesRow(st.id!);
                       const isBelow = row.average !== '-' && parseFloat(row.average) < 7.0;
+                      const isInactive = st.active === false;
 
                       return (
-                        <tr key={st.id} className="hover:bg-white/5">
+                        <tr key={st.id} className={`hover:bg-white/5 ${isInactive ? 'opacity-60 bg-zinc-950/20' : ''}`}>
                           <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
-                          <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
+                          <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">
+                            <span className={isInactive ? 'line-through text-zinc-500 decoration-zinc-650' : ''}>{st.name}</span>
+                            {isInactive && <span className="text-[9px] text-rose-400 font-normal ml-2">(Encerrada)</span>}
+                          </td>
                           <td className="py-2 px-2 text-center font-mono">{row.t1}</td>
                           <td className="py-2 px-2 text-center font-mono">{row.t2}</td>
                           <td className="py-2 px-2 text-center font-mono">{row.t3}</td>
@@ -754,11 +758,15 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                   {students.map((st) => {
                     const row = getStudentAttendanceRow(st.id!);
                     const hasAttendanceRisk = row.pct < 75;
+                    const isInactive = st.active === false;
 
                     return (
-                      <tr key={st.id} className="hover:bg-white/5">
+                      <tr key={st.id} className={`hover:bg-white/5 ${isInactive ? 'opacity-60 bg-zinc-950/20' : ''}`}>
                         <td className="py-2 px-3 text-center font-mono">{st.rollNumber}</td>
-                        <td className="py-2 px-4 font-semibold text-zinc-200 print:text-black">{st.name}</td>
+                        <td className="py-2 px-4 font-semibold text-zinc-200 print:text-black">
+                          <span className={isInactive ? 'line-through text-zinc-500 decoration-zinc-650' : ''}>{st.name}</span>
+                          {isInactive && <span className="text-[9px] text-rose-400 font-normal ml-2">(Encerrada)</span>}
+                        </td>
                         <td className="py-2 px-3 text-center font-mono">{row.totalLessons}</td>
                         <td className="py-2 px-3 text-center font-mono text-rose-400">{row.absences}</td>
                         <td className={`py-2 px-3 text-center font-mono font-bold bg-blue-950/10 text-blue-400 print:text-black ${hasAttendanceRisk ? 'text-rose-400 font-extrabold' : ''}`}>
@@ -800,11 +808,15 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                 <tbody className="divide-y divide-zinc-800/60 text-zinc-300 print:text-black">
                   {students.map((st) => {
                     const row = getStudentVistosRow(st.id!);
+                    const isInactive = st.active === false;
 
                     return (
-                      <tr key={st.id} className="hover:bg-white/5">
+                      <tr key={st.id} className={`hover:bg-white/5 ${isInactive ? 'opacity-60 bg-zinc-950/20' : ''}`}>
                         <td className="py-2 px-2 text-center font-mono">{st.rollNumber}</td>
-                        <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">{st.name}</td>
+                        <td className="py-2 px-3 font-semibold text-zinc-200 print:text-black">
+                          <span className={isInactive ? 'line-through text-zinc-500 decoration-zinc-650' : ''}>{st.name}</span>
+                          {isInactive && <span className="text-[9px] text-rose-400 font-normal ml-2">(Encerrada)</span>}
+                        </td>
                         
                         {/* Vistos checklist symbols */}
                         {row.checklist.map((checked, colIdx) => (
@@ -848,11 +860,15 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                   {students.map((st) => ({ student: st, row: getStudentBehaviorRow(st.id!) }))
                     .sort((a, b) => b.row.totalPoints - a.row.totalPoints)
                     .map((item, idx) => {
+                      const isInactive = item.student.active === false;
                       return (
-                        <tr key={item.student.id} className="hover:bg-white/5">
+                        <tr key={item.student.id} className={`hover:bg-white/5 ${isInactive ? 'opacity-60 bg-zinc-950/20' : ''}`}>
                           <td className="py-2 px-3 text-center font-bold">{idx + 1}º</td>
                           <td className="py-2 px-2 text-center font-mono text-zinc-500">{item.student.rollNumber}</td>
-                          <td className="py-2 px-4 font-semibold text-zinc-200 print:text-black">{item.student.name}</td>
+                          <td className="py-2 px-4 font-semibold text-zinc-200 print:text-black">
+                            <span className={isInactive ? 'line-through text-zinc-500 decoration-zinc-650' : ''}>{item.student.name}</span>
+                            {isInactive && <span className="text-[9px] text-rose-400 font-normal ml-2">(Encerrada)</span>}
+                          </td>
                           <td className={`py-2 px-3 text-center font-mono font-bold ${item.row.totalPoints > 0 ? 'text-emerald-400' : item.row.totalPoints < 0 ? 'text-rose-400' : 'text-zinc-500'}`}>
                             {item.row.totalPoints > 0 ? `+${item.row.totalPoints}` : item.row.totalPoints} pts
                           </td>

@@ -275,11 +275,13 @@ export default function CoordGlobalClasses() {
 
     setIsLoading(true);
     const roll = editingStudentRoll === '' ? 1 : Number(editingStudentRoll);
+    const existing = students.find(s => s.id === editingStudentId);
     const item: GlobalStudent = {
       id: editingStudentId,
       name: editingStudentName.trim(),
       rollNumber: roll,
-      classId: selectedClassId
+      classId: selectedClassId,
+      active: existing ? (existing.active !== false) : true
     };
 
     try {
@@ -291,6 +293,28 @@ export default function CoordGlobalClasses() {
       showMsg('Aluno atualizado com sucesso!', 'success');
     } catch (err) {
       showMsg('Erro ao atualizar aluno.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleToggleStudentActive = async (studentId: string) => {
+    const student = students.find(s => s.id === studentId);
+    if (!student) return;
+
+    setIsLoading(true);
+    const isNowActive = student.active === false;
+    const updatedStudent: GlobalStudent = {
+      ...student,
+      active: isNowActive
+    };
+
+    try {
+      await saveGlobalStudent(updatedStudent);
+      setStudents(prev => prev.map(s => s.id === studentId ? updatedStudent : s));
+      showMsg(`Matrícula de "${student.name}" ${isNowActive ? 'reativada' : 'encerrada'} com sucesso!`, 'success');
+    } catch (err) {
+      showMsg('Erro ao atualizar matrícula do aluno.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -1311,14 +1335,35 @@ export default function CoordGlobalClasses() {
 
                   <div className="space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
                     {filteredStudents.map((st) => (
-                      <div key={st.id} className="flex items-center justify-between bg-zinc-950/30 border border-zinc-850 rounded-xl px-3 py-2 text-xs hover:border-zinc-800 transition">
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-[11px] font-bold text-amber-500/70 bg-amber-500/5 border border-amber-500/10 w-6 h-6 rounded flex items-center justify-center shrink-0">
+                      <div key={st.id} className="flex items-center justify-between bg-zinc-950/30 border border-zinc-850 rounded-xl px-3 py-2 text-xs hover:border-zinc-800 transition gap-2">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className={`font-mono text-[11px] font-bold w-6 h-6 rounded flex items-center justify-center shrink-0 border ${
+                            st.active !== false
+                              ? 'text-amber-500/70 bg-amber-500/5 border-amber-500/10'
+                              : 'text-zinc-600 bg-zinc-950 border-zinc-900/40'
+                          }`}>
                             {st.rollNumber}
                           </span>
-                          <span className="text-zinc-200 font-medium truncate">{st.name}</span>
+                          <span className={`font-medium truncate ${
+                            st.active !== false
+                              ? 'text-zinc-200'
+                              : 'text-zinc-500 line-through decoration-zinc-600'
+                          }`}>
+                            {st.name}
+                          </span>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleToggleStudentActive(st.id)}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition shrink-0 cursor-pointer ${
+                              st.active !== false
+                                ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/30 hover:bg-emerald-900/20'
+                                : 'bg-rose-950/40 text-rose-400 border-rose-900/30 hover:bg-rose-900/20'
+                            }`}
+                            title={st.active !== false ? "Clique para encerrar matrícula" : "Clique para reativar matrícula"}
+                          >
+                            {st.active !== false ? 'Ativo' : 'Encerrada'}
+                          </button>
                           <button 
                             onClick={() => {
                               setEditingStudentId(st.id);

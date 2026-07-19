@@ -87,17 +87,27 @@ export default function HeaderFilters({
           const currentLocalStudents = await db.students.where({ classId: lc.id! }).toArray();
 
           for (const st of classStudents) {
-            const studentExists = currentLocalStudents.some(
+            const localStudent = currentLocalStudents.find(
               localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
             );
 
-            if (!studentExists) {
+            if (!localStudent) {
               await db.students.add({
                 classId: lc.id!,
                 name: st.name,
-                rollNumber: st.rollNumber
+                rollNumber: st.rollNumber,
+                active: st.active !== undefined ? st.active : true
               });
               addedCount++;
+            } else {
+              const currentActive = localStudent.active !== false;
+              const newActive = st.active !== false;
+              if (currentActive !== newActive || localStudent.rollNumber !== st.rollNumber) {
+                await db.students.update(localStudent.id!, {
+                  rollNumber: st.rollNumber,
+                  active: newActive
+                });
+              }
             }
           }
         }

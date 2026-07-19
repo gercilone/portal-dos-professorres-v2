@@ -371,11 +371,30 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, is
             ) : (
               students.map((student) => {
                 const stats = getStudentStats(student.id!);
+                const isInactive = student.active === false;
 
                 return (
-                  <tr key={student.id} className="hover:bg-white/5 transition-colors group">
-                    <td className="py-3 px-3 text-center text-zinc-500 font-mono text-xs">{student.rollNumber}</td>
-                    <td className="py-3 px-4 font-medium text-zinc-200">{student.name}</td>
+                  <tr 
+                    key={student.id} 
+                    className={`transition-colors group ${
+                      isInactive 
+                        ? 'bg-zinc-950/40 text-zinc-500 opacity-60 hover:bg-zinc-950/50' 
+                        : 'hover:bg-white/5'
+                    }`}
+                  >
+                    <td className={`py-3 px-3 text-center font-mono text-xs ${isInactive ? 'text-zinc-650' : 'text-zinc-500'}`}>{student.rollNumber}</td>
+                    <td className="py-3 px-4 transition-colors">
+                      <span className={`font-medium block ${
+                        isInactive 
+                          ? 'text-zinc-500 line-through decoration-zinc-600' 
+                          : 'text-zinc-200'
+                      }`}>
+                        {student.name}
+                      </span>
+                      {isInactive && (
+                        <span className="text-[10px] text-rose-400 font-semibold block mt-0.5">Matrícula Encerrada</span>
+                      )}
+                    </td>
                     
                     {/* Checkbox columns */}
                     {columns.map((col) => {
@@ -385,8 +404,8 @@ export default function TabBVistos({ schoolId, classId, subjectId, bimonthly, is
                           <button
                             id={`visto-check-${student.id}-${col.id}`}
                             type="button"
-                            disabled={isReadOnly}
-                            onClick={() => !isReadOnly && handleToggleVisto(student.id!, col.id!)}
+                            disabled={isReadOnly || isInactive}
+                            onClick={() => !isReadOnly && !isInactive && handleToggleVisto(student.id!, col.id!)}
                             className="inline-flex items-center justify-center w-10 h-10 rounded-xl transition cursor-pointer active:scale-95 disabled:pointer-events-none text-xl"
                             title={`${student.name} - ${col.title}`}
                           >

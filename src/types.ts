@@ -19,6 +19,7 @@ export interface Student {
   classId: number;
   name: string;
   rollNumber: number;
+  active?: boolean;
 }
 
 export interface SubjectWorkload {
