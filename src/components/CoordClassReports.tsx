@@ -11,7 +11,8 @@ import {
   GlobalClass,
   GlobalStudent,
   GlobalSubject,
-  GlobalWorkload
+  GlobalWorkload,
+  getActiveCoordinatorSchoolId
 } from '../firebase';
 import { 
   BarChart2, 
@@ -87,7 +88,11 @@ export default function CoordClassReports() {
       setSubjects(subs);
       setWorkloads(wls);
 
-      if (schs.length > 0 && !selectedSchoolId) {
+      // Auto-select first school if none selected or if restricted
+      const restrictedSchoolId = getActiveCoordinatorSchoolId();
+      if (restrictedSchoolId) {
+        setSelectedSchoolId(restrictedSchoolId);
+      } else if (schs.length > 0 && !selectedSchoolId) {
         setSelectedSchoolId(schs[0].id);
       }
     } catch (err) {

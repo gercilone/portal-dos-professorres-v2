@@ -49,6 +49,30 @@
     "/diaries/{username}/{tableName}/{recordId}": {
       "schema": "DiaryRecord",
       "description": "Subcollections of class diary entities"
+    },
+    "/global_schools/{schoolId}": {
+      "schema": "DiaryRecord",
+      "description": "Global schools list managed by coordinators"
+    },
+    "/global_classes/{classId}": {
+      "schema": "DiaryRecord",
+      "description": "Global classes list managed by coordinators"
+    },
+    "/global_students/{studentId}": {
+      "schema": "DiaryRecord",
+      "description": "Global students list managed by coordinators"
+    },
+    "/global_subjects/{subjectId}": {
+      "schema": "DiaryRecord",
+      "description": "Global subjects list managed by coordinators"
+    },
+    "/global_workloads/{workloadId}": {
+      "schema": "DiaryRecord",
+      "description": "Global workloads list managed by coordinators"
+    },
+    "/global_grades_control/{controlId}": {
+      "schema": "DiaryRecord",
+      "description": "Global grades control list tracking completed grade sheets"
     }
   }
 }

@@ -513,6 +513,7 @@ export interface CoordinatorAccount {
   username: string;
   password:  string;
   name: string;
+  schoolId?: string;
 }
 
 export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[]> {
@@ -643,6 +644,28 @@ export async function deleteProfessorFromCloud(username: string) {
   }
 }
 
+export function getActiveCoordinatorSchoolId(): string | null {
+  const role = localStorage.getItem('portal_user_role');
+  if (role !== 'coordinator') return null;
+
+  const activeUser = localStorage.getItem('portal_active_user')?.toLowerCase();
+  if (!activeUser || activeUser === 'admin' || activeUser === 'administrador') return null;
+
+  try {
+    const coordsStr = localStorage.getItem('portal_coordinators_list');
+    if (coordsStr) {
+      const coords = JSON.parse(coordsStr);
+      const match = coords.find((c: any) => c.username.toLowerCase() === activeUser);
+      if (match && match.schoolId) {
+        return match.schoolId;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading portal_coordinators_list:', e);
+  }
+  return null;
+}
+
 // 4. GLOBAL SHARED SCHOOLS, CLASSES & STUDENTS (Managed by Coordinator, attached by teachers)
 
 export interface GlobalSchool {
@@ -665,15 +688,21 @@ export interface GlobalStudent {
 }
 
 export async function getGlobalSchools(): Promise<GlobalSchool[]> {
+  const schoolId = getActiveCoordinatorSchoolId();
+  const filterList = (list: GlobalSchool[]) => {
+    if (schoolId) return list.filter(s => s.id === schoolId);
+    return list;
+  };
+
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_global_schools');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_schools');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
   try {
     const colRef = collection(dbInstance, 'global_schools');
@@ -683,12 +712,12 @@ export async function getGlobalSchools(): Promise<GlobalSchool[]> {
       schools.push({ ...doc.data() as GlobalSchool, id: doc.id });
     });
     localStorage.setItem('portal_global_schools', JSON.stringify(schools));
-    return schools;
+    return filterList(schools);
   } catch (error) {
     console.error('Error getting global schools:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_schools');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
 }
 
@@ -752,15 +781,21 @@ export async function deleteGlobalSchool(schoolId: string): Promise<void> {
 }
 
 export async function getGlobalClasses(): Promise<GlobalClass[]> {
+  const schoolId = getActiveCoordinatorSchoolId();
+  const filterList = (list: GlobalClass[]) => {
+    if (schoolId) return list.filter(c => c.schoolId === schoolId);
+    return list;
+  };
+
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_global_classes');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_classes');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
   try {
     const colRef = collection(dbInstance, 'global_classes');
@@ -770,12 +805,12 @@ export async function getGlobalClasses(): Promise<GlobalClass[]> {
       classes.push({ ...doc.data() as GlobalClass, id: doc.id });
     });
     localStorage.setItem('portal_global_classes', JSON.stringify(classes));
-    return classes;
+    return filterList(classes);
   } catch (error) {
     console.error('Error getting global classes:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_classes');
-    return localStr ? JSON.parse(localStr) : [];
+    return filterList(localStr ? JSON.parse(localStr) : []);
   }
 }
 
@@ -847,16 +882,44 @@ export async function deleteGlobalClass(classId: string): Promise<void> {
 }
 
 export async function getGlobalStudents(): Promise<GlobalStudent[]> {
+  const schoolId = getActiveCoordinatorSchoolId();
+  const filterList = async (list: GlobalStudent[]) => {
+    if (!schoolId) return list;
+    let schoolClassIds: string[] = [];
+    const localCls = localStorage.getItem('portal_global_classes');
+    if (localCls) {
+      schoolClassIds = JSON.parse(localCls).filter((c: any) => c.schoolId === schoolId).map((c: any) => c.id);
+    }
+    if (schoolClassIds.length === 0) {
+      const dbInstance = getFirestoreInstance();
+      if (dbInstance) {
+        try {
+          const colRef = collection(dbInstance, 'global_classes');
+          const snapshot = await withTimeout(getDocs(colRef), 4000);
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (data.schoolId === schoolId) {
+              schoolClassIds.push(doc.id);
+            }
+          });
+        } catch {}
+      }
+    }
+    return list.filter(s => schoolClassIds.includes(s.classId));
+  };
+
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_global_students');
     const students: GlobalStudent[] = localStr ? JSON.parse(localStr) : [];
-    return students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+    const sorted = students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+    return filterList(sorted);
   }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_students');
-    return localStr ? JSON.parse(localStr) : [];
+    const students: GlobalStudent[] = localStr ? JSON.parse(localStr) : [];
+    return filterList(students);
   }
   try {
     const colRef = collection(dbInstance, 'global_students');
@@ -866,12 +929,14 @@ export async function getGlobalStudents(): Promise<GlobalStudent[]> {
       students.push({ ...doc.data() as GlobalStudent, id: doc.id });
     });
     localStorage.setItem('portal_global_students', JSON.stringify(students));
-    return students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+    const sorted = students.sort((a, b) => a.rollNumber - b.rollNumber || a.name.localeCompare(b.name));
+    return filterList(sorted);
   } catch (error) {
     console.error('Error getting global students:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_students');
-    return localStr ? JSON.parse(localStr) : [];
+    const students: GlobalStudent[] = localStr ? JSON.parse(localStr) : [];
+    return filterList(students);
   }
 }
 
@@ -1038,15 +1103,43 @@ export async function deleteGlobalSubject(subjectId: string): Promise<void> {
 }
 
 export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
+  const schoolId = getActiveCoordinatorSchoolId();
+  const filterList = async (list: GlobalWorkload[]) => {
+    if (!schoolId) return list;
+    let schoolClassIds: string[] = [];
+    const localCls = localStorage.getItem('portal_global_classes');
+    if (localCls) {
+      schoolClassIds = JSON.parse(localCls).filter((c: any) => c.schoolId === schoolId).map((c: any) => c.id);
+    }
+    if (schoolClassIds.length === 0) {
+      const dbInstance = getFirestoreInstance();
+      if (dbInstance) {
+        try {
+          const colRef = collection(dbInstance, 'global_classes');
+          const snapshot = await withTimeout(getDocs(colRef), 4000);
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (data.schoolId === schoolId) {
+              schoolClassIds.push(doc.id);
+            }
+          });
+        } catch {}
+      }
+    }
+    return list.filter(w => schoolClassIds.includes(w.classId));
+  };
+
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_global_workloads');
-    return localStr ? JSON.parse(localStr) : [];
+    const workloads = localStr ? JSON.parse(localStr) : [];
+    return filterList(workloads);
   }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_workloads');
-    return localStr ? JSON.parse(localStr) : [];
+    const workloads = localStr ? JSON.parse(localStr) : [];
+    return filterList(workloads);
   }
   try {
     const colRef = collection(dbInstance, 'global_workloads');
@@ -1056,12 +1149,13 @@ export async function getGlobalWorkloads(): Promise<GlobalWorkload[]> {
       workloads.push({ ...doc.data() as GlobalWorkload, id: doc.id });
     });
     localStorage.setItem('portal_global_workloads', JSON.stringify(workloads));
-    return workloads;
+    return filterList(workloads);
   } catch (error) {
     console.error('Error getting global workloads:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_workloads');
-    return localStr ? JSON.parse(localStr) : [];
+    const workloads = localStr ? JSON.parse(localStr) : [];
+    return filterList(workloads);
   }
 }
 
@@ -1158,15 +1252,43 @@ export interface GlobalGradesControl {
 }
 
 export async function getGlobalGradesControl(): Promise<GlobalGradesControl[]> {
+  const schoolId = getActiveCoordinatorSchoolId();
+  const filterList = async (list: GlobalGradesControl[]) => {
+    if (!schoolId) return list;
+    let schoolClassIds: string[] = [];
+    const localCls = localStorage.getItem('portal_global_classes');
+    if (localCls) {
+      schoolClassIds = JSON.parse(localCls).filter((c: any) => c.schoolId === schoolId).map((c: any) => c.id);
+    }
+    if (schoolClassIds.length === 0) {
+      const dbInstance = getFirestoreInstance();
+      if (dbInstance) {
+        try {
+          const colRef = collection(dbInstance, 'global_classes');
+          const snapshot = await withTimeout(getDocs(colRef), 4000);
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (data.schoolId === schoolId) {
+              schoolClassIds.push(doc.id);
+            }
+          });
+        } catch {}
+      }
+    }
+    return list.filter(g => schoolClassIds.includes(g.classId));
+  };
+
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_global_grades_control');
-    return localStr ? JSON.parse(localStr) : [];
+    const results = localStr ? JSON.parse(localStr) : [];
+    return filterList(results);
   }
 
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     const localStr = localStorage.getItem('portal_global_grades_control');
-    return localStr ? JSON.parse(localStr) : [];
+    const results = localStr ? JSON.parse(localStr) : [];
+    return filterList(results);
   }
   try {
     const colRef = collection(dbInstance, 'global_grades_control');
@@ -1176,12 +1298,13 @@ export async function getGlobalGradesControl(): Promise<GlobalGradesControl[]> {
       results.push({ ...doc.data() as GlobalGradesControl, id: doc.id });
     });
     localStorage.setItem('portal_global_grades_control', JSON.stringify(results));
-    return results;
+    return filterList(results);
   } catch (error) {
     console.error('Error getting global grades control:', error);
     handleFirestoreError(error);
     const localStr = localStorage.getItem('portal_global_grades_control');
-    return localStr ? JSON.parse(localStr) : [];
+    const results = localStr ? JSON.parse(localStr) : [];
+    return filterList(results);
   }
 }
 

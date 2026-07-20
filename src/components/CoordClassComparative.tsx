@@ -5,7 +5,8 @@ import {
   GlobalClass,
   GlobalStudent,
   GlobalSubject,
-  GlobalWorkload
+  GlobalWorkload,
+  getActiveCoordinatorSchoolId
 } from '../firebase';
 import { 
   BarChart2, 
@@ -214,7 +215,7 @@ export default function CoordClassComparative({
       };
     });
 
-    const activeClasses = calculatedClasses.filter(c => c.totalStudents > 0);
+    const activeClasses = calculatedClasses; // Show all classes of the school as requested by the user
 
     // Filter classes with non-zero average for overall school average
     const classesWithGrades = activeClasses.filter(c => c.average > 0);
@@ -228,14 +229,26 @@ export default function CoordClassComparative({
 
     // Local sorting functions helper
     const getLocalClassSortScore = (className: string) => {
-      const normalized = className.toLowerCase();
+      let normalized = className.toLowerCase();
+      // Translate textual numbers to digits for standard ordering (e.g. Sexto -> 6)
+      normalized = normalized
+        .replace(/\b(primeiro|1º|1o)\b/g, '1')
+        .replace(/\b(segundo|2º|2o)\b/g, '2')
+        .replace(/\b(terceiro|3º|3o)\b/g, '3')
+        .replace(/\b(quarto|4º|4o)\b/g, '4')
+        .replace(/\b(quinto|5º|5o)\b/g, '5')
+        .replace(/\b(sexto|6º|6o)\b/g, '6')
+        .replace(/\b(setimo|sétimo|7º|7o)\b/g, '7')
+        .replace(/\b(oitavo|8º|8o)\b/g, '8')
+        .replace(/\b(nono|9º|9o)\b/g, '9');
+
       const numMatch = normalized.match(/\d+/);
       const num = numMatch ? parseInt(numMatch[0]) : 0;
       const isHighSchool = normalized.includes("medio") || normalized.includes("médio") || normalized.includes("e.m");
-      const isFundamental = normalized.includes("fundamental") || normalized.includes("fund");
+      const isFundamental = normalized.includes("fundamental") || normalized.includes("fund") || normalized.includes("ano");
 
       if (isHighSchool) {
-        return 10 + num;
+        return 100 + num;
       }
       if (isFundamental) {
         return num;
@@ -243,10 +256,10 @@ export default function CoordClassComparative({
       if (num >= 6 && num <= 9) {
         return num;
       }
-      if (num >= 1 && num <= 3) {
-        return 10 + num;
+      if (num >= 1 && num <= 5) {
+        return num;
       }
-      return num > 0 ? num : 99;
+      return num > 0 ? num : 999;
     };
 
     const localSortClasses = (a: { name: string }, b: { name: string }): number => {
@@ -311,7 +324,8 @@ export default function CoordClassComparative({
               <button
                 key={sch.id}
                 onClick={() => setSelectedSchoolId(sch.id)}
-                className={`px-4 py-2.5 rounded-xl border font-bold text-xs transition flex items-center gap-2 cursor-pointer ${
+                disabled={!!getActiveCoordinatorSchoolId()}
+                className={`px-4 py-2.5 rounded-xl border font-bold text-xs transition flex items-center gap-2 cursor-pointer disabled:opacity-60 ${
                   selectedSchoolId === sch.id
                     ? 'border-amber-500 bg-amber-500/10 text-amber-400'
                     : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
@@ -527,22 +541,37 @@ export default function CoordClassComparative({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {comparativeAnalytics.classes.map(item => {
+                  {comparativeAnalytics.classes.map((item, index) => {
                     const isBelowPassing = item.average < 7.0;
                     return (
                       <div key={item.id} className="bg-zinc-900 border border-zinc-850 hover:border-zinc-800 p-5 rounded-2xl flex items-center justify-between transition-all duration-200">
-                        <div className="space-y-1">
-                          <h4 className="text-white font-bold text-sm">{item.name}</h4>
-                          <div className="flex items-center gap-4 text-xs">
-                            <span className="text-zinc-500">
-                              Média: <span className={`font-mono font-bold ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>{item.average.toFixed(1).replace('.', ',')}</span>
-                            </span>
-                            <span className="text-zinc-500">
-                              Presença: <span className="font-mono font-bold text-zinc-300">{item.presencePct}%</span>
-                            </span>
+                        <div className="flex items-center gap-3 truncate pr-2">
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black font-mono text-xs shrink-0 ${
+                            sortBy === 'rank'
+                              ? index === 0
+                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                : index === 1
+                                  ? 'bg-zinc-300/10 text-zinc-300 border border-zinc-300/20'
+                                  : index === 2
+                                    ? 'bg-amber-700/10 text-amber-600 border border-amber-700/20'
+                                    : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+                              : 'bg-zinc-950 text-zinc-400 border border-zinc-850'
+                          }`}>
+                            {index + 1}º
+                          </div>
+                          <div className="space-y-1 truncate">
+                            <h4 className="text-white font-bold text-sm truncate">{item.name}</h4>
+                            <div className="flex items-center gap-4 text-xs">
+                              <span className="text-zinc-500">
+                                Média: <span className={`font-mono font-bold ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>{item.average.toFixed(1).replace('.', ',')}</span>
+                              </span>
+                              <span className="text-zinc-500">
+                                Presença: <span className="font-mono font-bold text-zinc-300">{item.presencePct}%</span>
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 shrink-0">
                           <span className="text-[10px] text-zinc-600 font-mono">{item.totalStudents} alunos</span>
                           {item.presencePct >= 75 && item.average >= 5.0 ? (
                             <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />

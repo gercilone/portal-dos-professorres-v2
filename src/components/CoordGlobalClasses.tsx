@@ -11,7 +11,8 @@ import {
   deleteGlobalClass,
   getGlobalStudents,
   saveGlobalStudent,
-  deleteGlobalStudent
+  deleteGlobalStudent,
+  getActiveCoordinatorSchoolId
 } from '../firebase';
 import { 
   Plus, 
@@ -92,8 +93,16 @@ export default function CoordGlobalClasses() {
       setClasses(cls);
       setStudents(stds);
 
-      // Auto-select first school if none selected
-      if (schs.length > 0 && !selectedSchoolId) {
+      // Auto-select first school if none selected or if restricted
+      const restrictedSchoolId = getActiveCoordinatorSchoolId();
+      if (restrictedSchoolId) {
+        setSelectedSchoolId(restrictedSchoolId);
+        // Find first class of this restricted school to select
+        const schoolClasses = cls.filter(c => c.schoolId === restrictedSchoolId).sort(sortClasses);
+        if (schoolClasses.length > 0) {
+          setSelectedClassId(schoolClasses[0].id);
+        }
+      } else if (schs.length > 0 && !selectedSchoolId) {
         setSelectedSchoolId(schs[0].id);
       }
     } catch (error) {
@@ -1027,36 +1036,38 @@ export default function CoordGlobalClasses() {
             </h4>
 
             {/* School Registration Form */}
-            {editingSchoolId ? (
-              <form onSubmit={handleUpdateSchool} className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  value={editingSchoolName}
-                  onChange={(e) => setEditingSchoolName(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-                <button type="submit" className="px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition cursor-pointer">
-                  Salvar
-                </button>
-                <button type="button" onClick={() => setEditingSchoolId(null)} className="p-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 rounded-xl transition cursor-pointer">
-                  <X className="w-4 h-4" />
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleAddSchool} className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="Cadastrar nova escola..."
-                  value={newSchoolName}
-                  onChange={(e) => setNewSchoolName(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-350 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-                <button type="submit" className="p-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition cursor-pointer shrink-0" title="Cadastrar Escola">
-                  <Plus className="w-4 h-4" />
-                </button>
-              </form>
+            {!getActiveCoordinatorSchoolId() && (
+              editingSchoolId ? (
+                <form onSubmit={handleUpdateSchool} className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={editingSchoolName}
+                    onChange={(e) => setEditingSchoolName(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-200 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <button type="submit" className="px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl transition cursor-pointer">
+                    Salvar
+                  </button>
+                  <button type="button" onClick={() => setEditingSchoolId(null)} className="p-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-400 rounded-xl transition cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleAddSchool} className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Cadastrar nova escola..."
+                    value={newSchoolName}
+                    onChange={(e) => setNewSchoolName(e.target.value)}
+                    className="bg-zinc-950 border border-zinc-800 text-zinc-350 text-xs rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                  <button type="submit" className="p-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl transition cursor-pointer shrink-0" title="Cadastrar Escola">
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </form>
+              )
             )}
 
             {/* Schools & Nested Classes List */}
@@ -1092,25 +1103,29 @@ export default function CoordGlobalClasses() {
                           {schoolClasses.length}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                        <button 
-                          onClick={() => {
-                            setEditingSchoolId(sch.id);
-                            setEditingSchoolName(sch.name);
-                          }} 
-                          className="p-1 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
-                          title="Editar Escola"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteSchoolClick(sch.id, sch.name)} 
-                          className="p-1 hover:bg-zinc-850 text-zinc-500 hover:text-rose-400 rounded transition cursor-pointer"
-                          title="Excluir Escola"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
+                      {!getActiveCoordinatorSchoolId() ? (
+                        <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button 
+                            onClick={() => {
+                              setEditingSchoolId(sch.id);
+                              setEditingSchoolName(sch.name);
+                            }} 
+                            className="p-1 hover:bg-zinc-850 text-zinc-400 hover:text-white rounded transition cursor-pointer"
+                            title="Editar Escola"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteSchoolClick(sch.id, sch.name)} 
+                            className="p-1 hover:bg-zinc-850 text-zinc-500 hover:text-rose-400 rounded transition cursor-pointer"
+                            title="Excluir Escola"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div onClick={e => e.stopPropagation()} />
+                      )}
                     </div>
 
                     {/* Submenu of series/classes for the selected school */}

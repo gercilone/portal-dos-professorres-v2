@@ -10,7 +10,8 @@ import {
   GlobalClass,
   GlobalSubject,
   GlobalWorkload,
-  GlobalGradesControl
+  GlobalGradesControl,
+  getActiveCoordinatorSchoolId
 } from '../firebase';
 import { 
   ClipboardCheck, 
@@ -61,7 +62,10 @@ export default function CoordGradesControl() {
       setWorkloads(wls);
       setGradesControl(gcs);
       
-      if (schs.length > 0 && !selectedSchoolId) {
+      const restrictedSchoolId = getActiveCoordinatorSchoolId();
+      if (restrictedSchoolId) {
+        setSelectedSchoolId(restrictedSchoolId);
+      } else if (schs.length > 0 && !selectedSchoolId) {
         setSelectedSchoolId(schs[0].id);
       }
       

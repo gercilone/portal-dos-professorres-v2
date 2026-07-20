@@ -14,7 +14,8 @@ import {
   saveGlobalWorkloadsBatch,
   deleteGlobalWorkload,
   syncProfessorsListInCloud,
-  ProfessorAccount
+  ProfessorAccount,
+  getActiveCoordinatorSchoolId
 } from '../firebase';
 import {
   Plus,
@@ -89,8 +90,11 @@ export default function CoordGlobalSubjects() {
       setWorkloads(wls);
       setProfessors(profs);
 
-      // Auto-select first school if none selected
-      if (schs.length > 0 && !selectedSchoolId) {
+      // Auto-select first school if none selected or if restricted
+      const restrictedSchoolId = getActiveCoordinatorSchoolId();
+      if (restrictedSchoolId) {
+        setSelectedSchoolId(restrictedSchoolId);
+      } else if (schs.length > 0 && !selectedSchoolId) {
         setSelectedSchoolId(schs[0].id);
       }
     } catch (error) {
@@ -418,7 +422,8 @@ export default function CoordGlobalSubjects() {
                 <select
                   value={selectedSchoolId}
                   onChange={(e) => setSelectedSchoolId(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium"
+                  disabled={!!getActiveCoordinatorSchoolId()}
+                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 font-medium disabled:opacity-60"
                 >
                   {schools.map((sch) => (
                     <option key={sch.id} value={sch.id}>{sch.name}</option>
