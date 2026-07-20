@@ -1,8 +1,8 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, ChangeEvent } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, Lesson, Attendance } from '../types';
-import { BookOpen, Calendar, Save, CheckCircle2, UserX, Info, AlertTriangle, ShieldAlert, Sparkles, Clock, ArrowRight, CalendarDays, Trash2, Pencil } from 'lucide-react';
+import { BookOpen, Calendar, Save, CheckCircle2, UserX, Info, AlertTriangle, ShieldAlert, Sparkles, Clock, ArrowRight, CalendarDays, Trash2, Pencil, Download, Upload, Printer } from 'lucide-react';
 import { getSchoolColorClasses } from './TabF_Settings';
 import { pushTeacherDataToCloud } from '../firebase';
 
@@ -33,6 +33,8 @@ export default function TabDAttendance({
   const [isSaved, setIsSaved] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<number | undefined>(undefined);
   const [lessonToDelete, setLessonToDelete] = useState<{ id: number; date: string } | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Load current workload for expected lessons progress
   const currentWorkload = useLiveQuery(async () => {
@@ -108,6 +110,306 @@ export default function TabDAttendance({
     const list = await db.attendance.toArray();
     return list.filter(a => Number(a.subjectId) === targetSubjectId && a.date === selectedDate);
   }, [subjectId, selectedDate]) || [];
+
+  // Export Entire Bimester Attendance to CSV
+  const handleExportCSV = () => {
+    if (!schoolId || !classId || !subjectId) return;
+
+    const sch = schools.find(s => s.id === schoolId);
+    const cls = classesList.find(c => c.id === classId);
+    const sub = subjectsList.find(s => s.id === subjectId);
+
+    const schoolName = sch?.name || '';
+    const className = cls?.name || '';
+    const subjectName = sub?.name || '';
+
+    // Sort lessons by date ascending
+    const sortedLessons = [...allLessons].sort((a, b) => a.date.localeCompare(b.date));
+    const dates = sortedLessons.map(l => l.date);
+
+    // Escape CSV cell function
+    const escapeCsv = (str: string) => {
+      if (!str) return '';
+      const stringified = String(str);
+      if (stringified.includes(';') || stringified.includes(',') || stringified.includes('"') || stringified.includes('\n')) {
+        return `"${stringified.replace(/"/g, '""')}"`;
+      }
+      return stringified;
+    };
+
+    const csvRows: string[] = [];
+
+    // Row 1: Header/Metadata
+    csvRows.push(`DIÁRIO DE CLASSE (CHAMADA BIMESTRAL) - Escola: ${escapeCsv(schoolName)} | Turma: ${escapeCsv(className)} | Disciplina: ${escapeCsv(subjectName)} | ${bimonthly}º Bimestre`);
+
+    // Row 2: Datas
+    const datesHeader = ['DATA', ...dates.map(d => d.split('-').reverse().join('/')), 'TOTAL FALTAS', 'FREQUÊNCIA (%)'];
+    csvRows.push(datesHeader.map(escapeCsv).join(';'));
+
+    // Row 3: Aulas registradas
+    const lessonsCountRow = ['AULAS REGISTRADAS', ...sortedLessons.map(l => String(l.lessonCount || 2)), '', ''];
+    csvRows.push(lessonsCountRow.map(escapeCsv).join(';'));
+
+    // Row 4: Conteúdos
+    const contentsRow = ['CONTEÚDO / ASSUNTO', ...sortedLessons.map(l => l.content || ''), '', ''];
+    csvRows.push(contentsRow.map(escapeCsv).join(';'));
+
+    // Row 5: Column headers for student rows
+    const studentHeaders = ['Nº', 'ALUNO', ...dates.map(d => d.split('-').reverse().join('/')), 'TOTAL FALTAS', 'FREQUÊNCIA (%)'];
+    csvRows.push(studentHeaders.map(escapeCsv).join(';'));
+
+    // Student Rows
+    students.forEach((student) => {
+      const studentRow: string[] = [];
+      studentRow.push(String(student.rollNumber));
+      studentRow.push(student.name);
+
+      dates.forEach((date) => {
+        const record = bimonthlyAttendance.find(a => a.studentId === student.id && a.date === date);
+        const absences = record ? record.absences : 0;
+        studentRow.push(absences === 0 ? 'P' : `${absences}F`);
+      });
+
+      const stats = getStudentCumulativeAttendance(student.id!);
+      studentRow.push(String(stats.absences));
+      studentRow.push(`${stats.pct}%`);
+
+      csvRows.push(studentRow.map(escapeCsv).join(';'));
+    });
+
+    const csvContent = '\uFEFF' + csvRows.join('\r\n'); // Add UTF-8 BOM for Excel compatibility
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedFileName = `diario_chamada_${className}_${subjectName}_${bimonthly}b`.toLowerCase().replace(/\s+/g, '_');
+    link.download = `${sanitizedFileName}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Import Bimester Attendance from CSV
+  const handleImportCSV = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Reset target value so change handler triggers again even for same file
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      const text = evt.target?.result as string;
+      if (!text) return;
+
+      try {
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length < 5) {
+          setImportStatus({
+            type: 'error',
+            message: 'O arquivo CSV importado está incompleto ou inválido. Mínimo de 5 linhas esperado.'
+          });
+          return;
+        }
+
+        // Detect delimiter (semicolon or comma)
+        let delimiter = ';';
+        const firstLine = lines[0] || '';
+        const commaCount = (firstLine.match(/,/g) || []).length;
+        const semiCount = (firstLine.match(/;/g) || []).length;
+        if (commaCount > semiCount) {
+          delimiter = ',';
+        }
+
+        // Parse lines helper
+        const parseCsvLine = (lineStr: string, delim: string) => {
+          const result: string[] = [];
+          let current = '';
+          let inQuotes = false;
+          for (let i = 0; i < lineStr.length; i++) {
+            const char = lineStr[i];
+            if (char === '"') {
+              if (inQuotes && lineStr[i + 1] === '"') {
+                current += '"';
+                i++; // Skip escape char
+              } else {
+                inQuotes = !inQuotes;
+              }
+            } else if (char === delim && !inQuotes) {
+              result.push(current.trim());
+              current = '';
+            } else {
+              current += char;
+            }
+          }
+          result.push(current.trim());
+          return result;
+        };
+
+        const parsedLines = lines.map(line => parseCsvLine(line, delimiter));
+
+        // Identify key rows
+        const datesRow = parsedLines.find(cols => cols[0]?.toUpperCase() === 'DATA' || cols[0]?.toUpperCase() === 'DATAS');
+        const lessonsCountRow = parsedLines.find(cols => cols[0]?.toUpperCase() === 'AULAS REGISTRADAS' || cols[0]?.toUpperCase() === 'AULAS');
+        const contentsRow = parsedLines.find(cols => cols[0]?.toUpperCase() === 'CONTEÚDO / ASSUNTO' || cols[0]?.toUpperCase() === 'CONTEÚDO' || cols[0]?.toUpperCase() === 'ASSUNTO');
+
+        if (!datesRow) {
+          setImportStatus({
+            type: 'error',
+            message: 'Não foi encontrada a linha com o cabeçalho "DATA" no arquivo CSV.'
+          });
+          return;
+        }
+
+        // Helper to convert date
+        const parseDateToDb = (dateStr: string) => {
+          if (!dateStr) return '';
+          let cleanStr = dateStr.replace(/^["']|["']$/g, '').trim();
+          if (cleanStr.includes('-')) {
+            const parts = cleanStr.split('-');
+            if (parts.length === 3 && parts[0].length === 4) {
+              return cleanStr;
+            }
+          }
+          if (cleanStr.includes('/')) {
+            const parts = cleanStr.split('/');
+            if (parts.length === 3) {
+              const day = parts[0].padStart(2, '0');
+              const month = parts[1].padStart(2, '0');
+              const year = parts[2];
+              return `${year}-${month}-${day}`;
+            }
+          }
+          return '';
+        };
+
+        const dateColumns: { colIdx: number; dbDate: string }[] = [];
+        for (let idx = 1; idx < datesRow.length; idx++) {
+          const rawVal = datesRow[idx];
+          if (!rawVal || rawVal.toUpperCase() === 'TOTAL FALTAS' || rawVal.toUpperCase().startsWith('FREQU') || rawVal === '') {
+            break;
+          }
+          const dbDate = parseDateToDb(rawVal);
+          if (dbDate) {
+            dateColumns.push({ colIdx: idx, dbDate });
+          }
+        }
+
+        if (dateColumns.length === 0) {
+          setImportStatus({
+            type: 'error',
+            message: 'Nenhuma data válida de aula encontrada nas colunas do CSV.'
+          });
+          return;
+        }
+
+        // Student rows
+        const studentRows = parsedLines.filter(cols => {
+          const firstCol = cols[0];
+          return firstCol && !isNaN(Number(firstCol)) && cols[1] && cols[1].trim() !== '';
+        });
+
+        if (studentRows.length === 0) {
+          setImportStatus({
+            type: 'error',
+            message: 'Nenhum registro de aluno encontrado nas linhas do CSV.'
+          });
+          return;
+        }
+
+        let importedLessonsCount = 0;
+
+        // Start processing and saving
+        for (const col of dateColumns) {
+          const date = col.dbDate;
+          const lCount = lessonsCountRow && lessonsCountRow[col.colIdx] ? (parseInt(lessonsCountRow[col.colIdx]) || 2) : 2;
+          const contentStr = contentsRow && contentsRow[col.colIdx] ? contentsRow[col.colIdx] : '';
+
+          // Upsert lesson
+          const existingLesson = await db.lessons
+            .filter(l => Number(l.classId) === Number(classId) && Number(l.subjectId) === Number(subjectId) && l.date === date && Number(l.bimonthly) === Number(bimonthly))
+            .first();
+
+          if (existingLesson) {
+            await db.lessons.update(existingLesson.id!, { lessonCount: lCount, content: contentStr });
+          } else {
+            await db.lessons.add({
+              classId: Number(classId),
+              subjectId: Number(subjectId),
+              date,
+              bimonthly: Number(bimonthly),
+              lessonCount: lCount,
+              content: contentStr
+            });
+          }
+          importedLessonsCount++;
+        }
+
+        // Import student attendances
+        for (const row of studentRows) {
+          const rollNum = parseInt(row[0]);
+          const studentName = row[1];
+
+          const matchStudent = students.find(s => 
+            s.name.toLowerCase().trim() === studentName.toLowerCase().trim() ||
+            s.rollNumber === rollNum
+          );
+
+          if (!matchStudent) continue;
+
+          for (const col of dateColumns) {
+            const date = col.dbDate;
+            const cellVal = row[col.colIdx] ? row[col.colIdx].toUpperCase().trim() : '';
+            
+            let absences = 0;
+            if (cellVal === '' || cellVal === 'P' || cellVal === '0' || cellVal === '0F' || cellVal === '-') {
+              absences = 0;
+            } else if (cellVal === 'F') {
+              absences = 1;
+            } else {
+              const digits = cellVal.replace(/\D/g, '');
+              absences = digits ? parseInt(digits) : 1;
+            }
+
+            // Upsert attendance
+            const existingAtt = await db.attendance
+              .filter(a => Number(a.studentId) === Number(matchStudent.id) && a.date === date && Number(a.subjectId) === Number(subjectId))
+              .first();
+
+            if (existingAtt) {
+              await db.attendance.update(existingAtt.id!, { absences, bimonthly: Number(bimonthly) });
+            } else {
+              await db.attendance.add({
+                studentId: matchStudent.id!,
+                date,
+                subjectId: Number(subjectId),
+                bimonthly: Number(bimonthly),
+                absences
+              });
+            }
+          }
+        }
+
+        // Push to cloud
+        const activeUser = localStorage.getItem('portal_active_user');
+        if (activeUser) {
+          await pushTeacherDataToCloud(activeUser, db);
+        }
+
+        setImportStatus({
+          type: 'success',
+          message: `Importação realizada com sucesso! Foram registradas/atualizadas ${importedLessonsCount} aulas e lançadas frequências de ${studentRows.length} alunos.`
+        });
+
+      } catch (err: any) {
+        console.error('Error parsing imported CSV:', err);
+        setImportStatus({
+          type: 'error',
+          message: `Falha ao processar o CSV: ${err?.message || 'Erro desconhecido'}`
+        });
+      }
+    };
+    reader.readAsText(file, 'utf-8');
+  };
 
   // Sync state with current lesson when selected date or loaded lesson changes
   useEffect(() => {
@@ -601,6 +903,40 @@ export default function TabDAttendance({
               <p className="text-xs text-zinc-400 mt-0.5">
                 Atribua faltas clicando no número correspondente para a aula do dia selecionado
               </p>
+              
+              {/* Export, Import, Print toolbar */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-3 no-print">
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer border border-zinc-700 shadow-sm"
+                  title="Exportar dados do bimestre inteiro para CSV"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                  <span>Exportar CSV</span>
+                </button>
+
+                <label className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer border border-zinc-700 shadow-sm">
+                  <Upload className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Importar CSV</span>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={handleImportCSV}
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setPrintModalOpen(true)}
+                  className="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 hover:text-white rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer border border-zinc-700 shadow-sm"
+                  title="Visualizar e imprimir diário físico do bimestre"
+                >
+                  <Printer className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Imprimir Diário</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -978,6 +1314,275 @@ export default function TabDAttendance({
                 Excluir Aula
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Import Toast / Notification Banner */}
+      {importStatus && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-md w-full bg-zinc-900 border border-zinc-800 p-4 rounded-2xl shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-start gap-3">
+            <div className={`p-2 rounded-xl ${importStatus.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+              <Info className="w-5 h-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <h4 className="text-white font-bold text-sm">
+                {importStatus.type === 'success' ? 'Importação Concluída' : 'Erro na Importação'}
+              </h4>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                {importStatus.message}
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end mt-3 pt-2 border-t border-zinc-800/60">
+            <button
+              type="button"
+              onClick={() => setImportStatus(null)}
+              className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-750 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+            >
+              Entendido
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Print Preview Modal */}
+      {printModalOpen && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 z-50 no-print">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl max-w-5xl w-full h-[90vh] flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0">
+              <div className="flex items-center gap-2">
+                <Printer className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="text-white font-extrabold text-sm">Visualizar Diário de Classe Físico</h3>
+                  <p className="text-[10px] text-zinc-500">Esta pauta foi formatada especificamente para impressão em papel A4 ou PDF.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-black rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-lg shadow-amber-950/40"
+                >
+                  <Printer className="w-4 h-4" />
+                  Imprimir Diário (PDF)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintModalOpen(false)}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-750 text-zinc-300 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable Document Area */}
+            <div className="flex-1 overflow-y-auto p-6 bg-zinc-950/40 scrollbar-thin scrollbar-thumb-zinc-800">
+              
+              {/* Printable sheet mock wrapper */}
+              <div id="printable-area" className="bg-white text-black p-8 rounded-lg shadow-xl max-w-[21cm] mx-auto space-y-8 font-sans border border-zinc-200">
+                <style>{`
+                  @media print {
+                    body {
+                      background: white !important;
+                      color: black !important;
+                    }
+                    /* Hide everything else on the page */
+                    body > *:not(#printable-print-wrapper) {
+                      display: none !important;
+                    }
+                    #printable-area {
+                      position: absolute;
+                      left: 0;
+                      top: 0;
+                      width: 100%;
+                      padding: 0 !important;
+                      margin: 0 !important;
+                      border: none !important;
+                      box-shadow: none !important;
+                    }
+                    .no-print {
+                      display: none !important;
+                    }
+                    table {
+                      page-break-inside: auto;
+                    }
+                    tr {
+                      page-break-inside: avoid;
+                      page-break-after: auto;
+                    }
+                    thead {
+                      display: table-header-group;
+                    }
+                    tfoot {
+                      display: table-footer-group;
+                    }
+                    .page-break {
+                      page-break-before: always;
+                      break-before: page;
+                    }
+                  }
+                  
+                  /* On screen preview overrides */
+                  #printable-area h1, #printable-area h2, #printable-area h3, #printable-area h4 {
+                    color: #000000;
+                  }
+                  #printable-area p, #printable-area span, #printable-area td, #printable-area th {
+                    color: #1a1a1a;
+                  }
+                `}</style>
+
+                {/* Cover Header */}
+                <div className="border-b-2 border-black pb-4 flex justify-between items-start text-left">
+                  <div className="space-y-1">
+                    <h2 className="text-xl font-black tracking-tight text-black uppercase">Diário de Classe do Professor</h2>
+                    <p className="text-xs font-semibold text-zinc-600">Registro Eletrônico Oficial de Frequência e Conteúdo</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 pt-3 text-[11px] text-zinc-800">
+                      <div><strong>Escola:</strong> {schools.find(s => s.id === schoolId)?.name || 'N/A'}</div>
+                      <div><strong>Turma:</strong> {classesList.find(c => c.id === classId)?.name || 'N/A'}</div>
+                      <div><strong>Disciplina:</strong> {subjectsList.find(s => s.id === subjectId)?.name || 'N/A'}</div>
+                      <div><strong>Bimestre:</strong> {bimonthly}º Bimestre</div>
+                      <div><strong>Professor(a):</strong> {localStorage.getItem('portal_teacher_name') || 'N/A'}</div>
+                      <div><strong>Ano Letivo:</strong> {new Date().getFullYear()}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Stamp box */}
+                  <div className="border-2 border-dashed border-zinc-400 p-3 rounded text-center shrink-0 w-[140px] h-[90px] flex flex-col justify-center items-center">
+                    <span className="text-[9px] text-zinc-500 uppercase tracking-widest block font-bold">VISTO</span>
+                    <span className="text-[8px] text-zinc-400 block mt-4">COORDENAÇÃO</span>
+                  </div>
+                </div>
+
+                {/* Sheet 1: Bimester Attendance Matrix */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center border-b border-black pb-1.5">
+                    <h3 className="text-sm font-bold text-black uppercase tracking-wider text-left">I - Registro de Frequência do Aluno</h3>
+                    <span className="text-[10px] text-zinc-600 font-mono">Total de aulas dadas no bimestre: {totalLessonsGiven}</span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse border border-black">
+                      <thead>
+                        <tr className="bg-zinc-100 text-[10px] font-bold text-black border border-black">
+                          <th className="py-1.5 px-1 border border-black text-center w-[30px]">Nº</th>
+                          <th className="py-1.5 px-2 border border-black min-w-[120px]">Nome do Aluno</th>
+                          {[...allLessons]
+                            .sort((a, b) => a.date.localeCompare(b.date))
+                            .map((lesson) => {
+                              const dayMonth = lesson.date.split('-').reverse().slice(0, 2).join('/');
+                              return (
+                                <th key={lesson.id} className="py-1 px-0.5 border border-black text-center text-[9px] w-[28px] font-mono" title={lesson.date}>
+                                  <div className="rotate-0 leading-tight">
+                                    {dayMonth}
+                                  </div>
+                                </th>
+                              );
+                            })}
+                          <th className="py-1.5 px-1 border border-black text-center w-[45px] font-semibold text-[9px]">Faltas</th>
+                          <th className="py-1.5 px-1 border border-black text-center w-[45px] font-semibold text-[9px]">Freq %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {students.length === 0 ? (
+                          <tr>
+                            <td colSpan={100} className="py-4 text-center text-zinc-500">Nenhum aluno matriculado.</td>
+                          </tr>
+                        ) : (
+                          students.map((student) => {
+                            const sortedLessons = [...allLessons].sort((a, b) => a.date.localeCompare(b.date));
+                            let cumulativeAbsences = 0;
+                            
+                            return (
+                              <tr key={student.id} className="border border-black hover:bg-zinc-50">
+                                <td className="py-1 px-1 border border-black text-center font-mono font-bold text-[10px]">{student.rollNumber}</td>
+                                <td className="py-1 px-2 border border-black text-left font-semibold text-[10px] truncate max-w-[160px]">{student.name}</td>
+                                {sortedLessons.map((lesson) => {
+                                  const record = bimonthlyAttendance.find(a => a.studentId === student.id && a.date === lesson.date);
+                                  const absences = record ? record.absences : 0;
+                                  cumulativeAbsences += absences;
+                                  return (
+                                    <td key={lesson.id} className="py-1 px-0.5 border border-black text-center font-mono text-[10px]">
+                                      {absences === 0 ? '•' : `${absences}F`}
+                                    </td>
+                                  );
+                                })}
+                                <td className="py-1 px-1 border border-black text-center font-mono font-bold text-[10px]">{cumulativeAbsences}</td>
+                                <td className="py-1 px-1 border border-black text-center font-mono font-bold text-[10px]">
+                                  {totalLessonsGiven === 0 ? '100' : Math.max(0, Math.min(100, Math.round(((totalLessonsGiven - cumulativeAbsences) / totalLessonsGiven) * 100)))}%
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[9px] text-zinc-500 leading-tight text-left">
+                    <strong>Instruções de Preenchimento:</strong> O caractere (•) representa presença em todas as aulas registradas no dia correspondente. O caractere (XF) representa a quantidade de faltas do aluno registradas no dia.
+                  </p>
+                </div>
+
+                {/* Sheet 2: Lesson Content Records */}
+                <div className="space-y-3 page-break pt-6 text-left">
+                  <div className="flex justify-between items-center border-b border-black pb-1.5">
+                    <h3 className="text-sm font-bold text-black uppercase tracking-wider text-left">II - Registro de Conteúdos Ministrados</h3>
+                    <span className="text-[10px] text-zinc-600 font-mono">Bimestre: {bimonthly}º Bimestre</span>
+                  </div>
+
+                  <table className="w-full text-left text-xs border-collapse border border-black">
+                    <thead>
+                      <tr className="bg-zinc-100 font-bold text-black border border-black text-[10px]">
+                        <th className="py-2 px-3 border border-black text-center w-[80px]">Data</th>
+                        <th className="py-2 px-2 border border-black text-center w-[60px]">Aulas</th>
+                        <th className="py-2 px-3 border border-black">Conteúdo / Assunto Ministrado da Turma</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allLessons.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="py-8 text-center text-zinc-500 font-semibold">Nenhuma aula registrada ou conteúdo lançado no sistema para este bimestre.</td>
+                        </tr>
+                      ) : (
+                        [...allLessons]
+                          .sort((a, b) => a.date.localeCompare(b.date))
+                          .map((lesson) => (
+                            <tr key={lesson.id} className="border border-black">
+                              <td className="py-2 px-3 border border-black text-center font-mono font-bold text-[10px]">
+                                {lesson.date.split('-').reverse().join('/')}
+                              </td>
+                              <td className="py-2 px-2 border border-black text-center font-mono text-[10px]">
+                                {lesson.lessonCount || 2}
+                              </td>
+                              <td className="py-2 px-3 border border-black text-left text-[10px] leading-relaxed">
+                                {lesson.content || 'Sem assunto registrado'}
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Sheet 3: Signature Area */}
+                <div className="pt-12 grid grid-cols-2 gap-12 text-center text-xs">
+                  <div className="space-y-1">
+                    <p className="border-t border-black pt-2 font-semibold">Assinatura do(a) Professor(a)</p>
+                    <p className="text-[10px] text-zinc-500">Gerado Eletronicamente via Portal do Professor</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="border-t border-black pt-2 font-semibold">Assinatura da Coordenação</p>
+                    <p className="text-[10px] text-zinc-500">Escola: {schools.find(s => s.id === schoolId)?.name || 'N/A'}</p>
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
           </div>
         </div>
       )}

@@ -1505,6 +1505,20 @@ export async function getClassReportData(
       .filter((u): u is string => !!u)
   ));
 
+  let globalSubjects: any[] = [];
+  try {
+    globalSubjects = await getGlobalSubjects();
+  } catch (err) {
+    console.error('Error fetching global subjects in getClassReportData:', err);
+  }
+
+  let globalClasses: any[] = [];
+  try {
+    globalClasses = await getGlobalClasses();
+  } catch (err) {
+    console.error('Error fetching global classes in getClassReportData:', err);
+  }
+
   const bimonthlyGrades: any[] = [];
   const extraGrades: any[] = [];
   const attendance: any[] = [];
@@ -1513,15 +1527,95 @@ export async function getClassReportData(
 
   const studentIdsSet = new Set(studentsInClass.map(s => String(s.id)));
 
+  const globalStudentByName: Record<string, string> = {};
+  studentsInClass.forEach(s => {
+    if (s.name) {
+      globalStudentByName[s.name.trim().toLowerCase()] = String(s.id);
+    }
+  });
+
+  const globalSubjectByName: Record<string, string> = {};
+  globalSubjects.forEach(s => {
+    if (s.name) {
+      globalSubjectByName[s.name.trim().toLowerCase()] = String(s.id);
+    }
+  });
+
+  const globalClassByName: Record<string, string> = {};
+  globalClasses.forEach(c => {
+    if (c.name) {
+      globalClassByName[c.name.trim().toLowerCase()] = String(c.id);
+    }
+  });
+
   // We can fetch the data for all teachers in parallel
   await Promise.all(teacherUsernames.map(async (username) => {
     try {
+      // Fetch local to global mapping tables for this teacher
+      const studentMap: Record<number, string> = {};
+      try {
+        const localStudentsRef = collection(dbInstance, `diaries/${username}/students`);
+        const localStudentsSnapshot = await withTimeout(getDocs(localStudentsRef), 5000);
+        localStudentsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            studentMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local students mapping for ${username}:`, err);
+      }
+
+      const subjectMap: Record<number, string> = {};
+      try {
+        const localSubjectsRef = collection(dbInstance, `diaries/${username}/subjects`);
+        const localSubjectsSnapshot = await withTimeout(getDocs(localSubjectsRef), 5000);
+        localSubjectsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            subjectMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local subjects mapping for ${username}:`, err);
+      }
+
+      const classMap: Record<number, string> = {};
+      try {
+        const localClassesRef = collection(dbInstance, `diaries/${username}/classes`);
+        const localClassesSnapshot = await withTimeout(getDocs(localClassesRef), 5000);
+        localClassesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            classMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local classes mapping for ${username}:`, err);
+      }
+
       // 1. bimonthlyGrades
       const gradesRef = collection(dbInstance, `diaries/${username}/bimonthlyGrades`);
       const gradesSnapshot = await withTimeout(getDocs(gradesRef), 5000);
       gradesSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          bimonthlyGrades.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           bimonthlyGrades.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1531,7 +1625,23 @@ export async function getClassReportData(
       const extraSnapshot = await withTimeout(getDocs(extraRef), 5000);
       extraSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          extraGrades.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           extraGrades.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1541,7 +1651,23 @@ export async function getClassReportData(
       const attSnapshot = await withTimeout(getDocs(attRef), 5000);
       attSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          attendance.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           attendance.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1551,8 +1677,22 @@ export async function getClassReportData(
       const lessonsSnapshot = await withTimeout(getDocs(lessonsRef), 5000);
       lessonsSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (String(data.classId) === String(classId)) {
-          lessons.push({ id: doc.id, teacherUsername: username, ...data });
+        const localClassId = Number(data.classId);
+        const className = classMap[localClassId];
+        const globalClassId = className ? globalClassByName[className] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalClassId === classId || String(data.classId) === String(classId)) {
+          lessons.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            classId: classId,
+            subjectId: globalSubId || data.subjectId
+          });
         }
       });
 
@@ -1561,8 +1701,22 @@ export async function getClassReportData(
       const descSnapshot = await withTimeout(getDocs(descRef), 5000);
       descSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (String(data.classId) === String(classId)) {
-          assignmentDescriptions.push({ id: doc.id, teacherUsername: username, ...data });
+        const localClassId = Number(data.classId);
+        const className = classMap[localClassId];
+        const globalClassId = className ? globalClassByName[className] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalClassId === classId || String(data.classId) === String(classId)) {
+          assignmentDescriptions.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            classId: classId,
+            subjectId: globalSubId || data.subjectId
+          });
         }
       });
 
@@ -1603,6 +1757,20 @@ export async function getSchoolReportsData(
       .filter((u): u is string => !!u)
   ));
 
+  let globalSubjects: any[] = [];
+  try {
+    globalSubjects = await getGlobalSubjects();
+  } catch (err) {
+    console.error('Error fetching global subjects in getSchoolReportsData:', err);
+  }
+
+  let globalClasses: any[] = [];
+  try {
+    globalClasses = await getGlobalClasses();
+  } catch (err) {
+    console.error('Error fetching global classes in getSchoolReportsData:', err);
+  }
+
   const bimonthlyGrades: any[] = [];
   const extraGrades: any[] = [];
   const attendance: any[] = [];
@@ -1612,15 +1780,95 @@ export async function getSchoolReportsData(
   const studentIdsSet = new Set(studentsInSchool.map(s => String(s.id)));
   const classIdsSet = new Set(workloadsInSchool.map(w => String(w.classId)));
 
+  const globalStudentByName: Record<string, string> = {};
+  studentsInSchool.forEach(s => {
+    if (s.name) {
+      globalStudentByName[s.name.trim().toLowerCase()] = String(s.id);
+    }
+  });
+
+  const globalSubjectByName: Record<string, string> = {};
+  globalSubjects.forEach(s => {
+    if (s.name) {
+      globalSubjectByName[s.name.trim().toLowerCase()] = String(s.id);
+    }
+  });
+
+  const globalClassByName: Record<string, string> = {};
+  globalClasses.forEach(c => {
+    if (c.name) {
+      globalClassByName[c.name.trim().toLowerCase()] = String(c.id);
+    }
+  });
+
   // Fetch the data for all teachers in parallel
   await Promise.all(teacherUsernames.map(async (username) => {
     try {
+      // Fetch local to global mapping tables for this teacher
+      const studentMap: Record<number, string> = {};
+      try {
+        const localStudentsRef = collection(dbInstance, `diaries/${username}/students`);
+        const localStudentsSnapshot = await withTimeout(getDocs(localStudentsRef), 5000);
+        localStudentsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            studentMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local students mapping for ${username}:`, err);
+      }
+
+      const subjectMap: Record<number, string> = {};
+      try {
+        const localSubjectsRef = collection(dbInstance, `diaries/${username}/subjects`);
+        const localSubjectsSnapshot = await withTimeout(getDocs(localSubjectsRef), 5000);
+        localSubjectsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            subjectMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local subjects mapping for ${username}:`, err);
+      }
+
+      const classMap: Record<number, string> = {};
+      try {
+        const localClassesRef = collection(dbInstance, `diaries/${username}/classes`);
+        const localClassesSnapshot = await withTimeout(getDocs(localClassesRef), 5000);
+        localClassesSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.id !== undefined && data.name) {
+            classMap[Number(data.id)] = String(data.name).trim().toLowerCase();
+          }
+        });
+      } catch (err) {
+        console.error(`Error loading local classes mapping for ${username}:`, err);
+      }
+
       // 1. bimonthlyGrades
       const gradesRef = collection(dbInstance, `diaries/${username}/bimonthlyGrades`);
       const gradesSnapshot = await withTimeout(getDocs(gradesRef), 5000);
       gradesSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          bimonthlyGrades.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           bimonthlyGrades.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1630,7 +1878,23 @@ export async function getSchoolReportsData(
       const extraSnapshot = await withTimeout(getDocs(extraRef), 5000);
       extraSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          extraGrades.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           extraGrades.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1640,7 +1904,23 @@ export async function getSchoolReportsData(
       const attSnapshot = await withTimeout(getDocs(attRef), 5000);
       attSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (studentIdsSet.has(String(data.studentId))) {
+        const localStudId = Number(data.studentId);
+        const studName = studentMap[localStudId];
+        const globalStudId = studName ? globalStudentByName[studName] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalStudId) {
+          attendance.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            studentId: globalStudId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (studentIdsSet.has(String(data.studentId))) {
           attendance.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1650,7 +1930,23 @@ export async function getSchoolReportsData(
       const lessonsSnapshot = await withTimeout(getDocs(lessonsRef), 5000);
       lessonsSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (classIdsSet.has(String(data.classId))) {
+        const localClassId = Number(data.classId);
+        const className = classMap[localClassId];
+        const globalClassId = className ? globalClassByName[className] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalClassId && classIdsSet.has(globalClassId)) {
+          lessons.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            classId: globalClassId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (classIdsSet.has(String(data.classId))) {
           lessons.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });
@@ -1660,7 +1956,23 @@ export async function getSchoolReportsData(
       const descSnapshot = await withTimeout(getDocs(descRef), 5000);
       descSnapshot.forEach((doc) => {
         const data = doc.data();
-        if (classIdsSet.has(String(data.classId))) {
+        const localClassId = Number(data.classId);
+        const className = classMap[localClassId];
+        const globalClassId = className ? globalClassByName[className] : null;
+
+        const localSubId = Number(data.subjectId);
+        const subName = subjectMap[localSubId];
+        const globalSubId = subName ? globalSubjectByName[subName] : null;
+
+        if (globalClassId && classIdsSet.has(globalClassId)) {
+          assignmentDescriptions.push({
+            id: doc.id,
+            teacherUsername: username,
+            ...data,
+            classId: globalClassId,
+            subjectId: globalSubId || data.subjectId
+          });
+        } else if (classIdsSet.has(String(data.classId))) {
           assignmentDescriptions.push({ id: doc.id, teacherUsername: username, ...data });
         }
       });

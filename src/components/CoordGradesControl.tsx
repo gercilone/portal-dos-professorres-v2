@@ -6,11 +6,14 @@ import {
   getGlobalWorkloads,
   getGlobalGradesControl,
   saveGlobalGradesControl,
+  getGlobalStudents,
+  getClassReportData,
   GlobalSchool,
   GlobalClass,
   GlobalSubject,
   GlobalWorkload,
   GlobalGradesControl,
+  GlobalStudent,
   getActiveCoordinatorSchoolId
 } from '../firebase';
 import { 
@@ -31,6 +34,7 @@ export default function CoordGradesControl() {
   const [subjects, setSubjects] = useState<GlobalSubject[]>([]);
   const [workloads, setWorkloads] = useState<GlobalWorkload[]>([]);
   const [gradesControl, setGradesControl] = useState<GlobalGradesControl[]>([]);
+  const [students, setStudents] = useState<GlobalStudent[]>([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState<string>('');
   
   const [selectedAno, setSelectedAno] = useState<string>('');
@@ -39,6 +43,15 @@ export default function CoordGradesControl() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const [classReport, setClassReport] = useState<{
+    bimonthlyGrades: any[];
+    extraGrades: any[];
+    attendance: any[];
+    lessons: any[];
+    assignmentDescriptions: any[];
+  } | null>(null);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -49,18 +62,20 @@ export default function CoordGradesControl() {
     else setIsLoading(true);
     
     try {
-      const [schs, cls, subs, wls, gcs] = await Promise.all([
+      const [schs, cls, subs, wls, gcs, stds] = await Promise.all([
         getGlobalSchools(),
         getGlobalClasses(),
         getGlobalSubjects(),
         getGlobalWorkloads(),
-        getGlobalGradesControl()
+        getGlobalGradesControl(),
+        getGlobalStudents()
       ]);
       setSchools(schs);
       setClasses(cls);
       setSubjects(subs);
       setWorkloads(wls);
       setGradesControl(gcs);
+      setStudents(stds);
       
       const restrictedSchoolId = getActiveCoordinatorSchoolId();
       if (restrictedSchoolId) {
@@ -177,6 +192,55 @@ export default function CoordGradesControl() {
   const classSubjects = subjects.filter(s => 
     classWorkloads.some(w => w.subjectId === s.id)
   );
+
+  // Fetch class report data from teachers diaries
+  useEffect(() => {
+    const fetchClassReport = async () => {
+      if (!currentClass?.id) {
+        setClassReport(null);
+        return;
+      }
+      setIsLoadingReport(true);
+      try {
+        const classStudents = students.filter(st => st.classId === currentClass.id);
+        const classWls = workloads.filter(w => w.classId === currentClass.id);
+        const data = await getClassReportData(currentClass.id, classStudents, classWls);
+        setClassReport(data);
+      } catch (err) {
+        console.error('Error fetching class report for grades control:', err);
+      } finally {
+        setIsLoadingReport(false);
+      }
+    };
+    fetchClassReport();
+  }, [currentClass?.id, students, workloads]);
+
+  // Helper to check if grades have been registered in the database
+  const hasLaunchedGrades = (subjectId: string, colKey: string) => {
+    if (!classReport) return false;
+
+    if (['1b', '2b', '3b', '4b'].includes(colKey)) {
+      const bimNum = parseInt(colKey); // 1, 2, 3, 4
+      return classReport.bimonthlyGrades.some(
+        g => String(g.subjectId) === String(subjectId) && 
+             Number(g.bimonthly) === Number(bimNum) &&
+             (g.t1 !== undefined || g.t2 !== undefined || g.t3 !== undefined || g.t4 !== undefined || g.t5 !== undefined || g.exam !== undefined)
+      );
+    } else if (colKey === 'r1') {
+      return classReport.extraGrades.some(
+        g => String(g.subjectId) === String(subjectId) && g.recSem1 !== undefined && g.recSem1 !== null
+      );
+    } else if (colKey === 'r2') {
+      return classReport.extraGrades.some(
+        g => String(g.subjectId) === String(subjectId) && g.recSem2 !== undefined && g.recSem2 !== null
+      );
+    } else if (colKey === 'pf') {
+      return classReport.extraGrades.some(
+        g => String(g.subjectId) === String(subjectId) && g.finalExam !== undefined && g.finalExam !== null
+      );
+    }
+    return false;
+  };
 
   // Fallback if no subjects are linked to the class
   const displaySubjects = classSubjects.length > 0 
@@ -372,6 +436,7 @@ export default function CoordGradesControl() {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 <span>
                   Visualizando diário de: <strong>{currentClass.name}</strong>
+                  {isLoadingReport && <span className="ml-2 text-zinc-500 italic">(Verificando notas lançadas na nuvem...)</span>}
                 </span>
               </div>
               <span className="text-[10px] text-zinc-600 font-mono">
@@ -397,7 +462,7 @@ export default function CoordGradesControl() {
                 <tbody className="divide-y divide-zinc-800/60">
                   {displaySubjects.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-xs text-zinc-500 italic">
+                      <td colSpan={8} className="p-8 text-center text-xs text-zinc-500 italic">
                         Nenhuma disciplina cadastrada para esta turma ou no sistema.
                       </td>
                     </tr>
@@ -420,23 +485,37 @@ export default function CoordGradesControl() {
                           {bimonthlyColumns.map(col => {
                             const entryId = currentClass ? `${currentClass.id}_${sub.id}_${col.key}` : '';
                             const entry = gradesControl.find(g => g.id === entryId);
-                            const isReceived = entry ? entry.received : false;
+                            const isManualReceived = entry ? entry.received : false;
+                            const isAutoDetected = hasLaunchedGrades(sub.id, col.key);
+                            const isReceived = isManualReceived || isAutoDetected;
 
                             return (
                               <td key={col.key} className="p-4 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleStatus(sub.id, col.key)}
-                                  disabled={!currentClass}
-                                  title={`Marcar ${col.label} de ${sub.name} como ${isReceived ? 'Pendente' : 'Recebido'}`}
-                                  className="mx-auto flex items-center justify-center p-1 rounded-full hover:bg-zinc-800 transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
-                                >
-                                  {isReceived ? (
-                                    <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-in zoom-in-75 duration-200" />
-                                  ) : (
-                                    <Circle className="w-5 h-5 text-zinc-600 hover:text-amber-500/60 transition" />
-                                  )}
-                                </button>
+                                <div className="flex flex-col items-center justify-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleStatus(sub.id, col.key)}
+                                    disabled={!currentClass}
+                                    title={isAutoDetected 
+                                      ? `Notas auto-detectadas no diário do professor para ${col.label} de ${sub.name}. Clique para alternar estado manual.`
+                                      : `Marcar ${col.label} de ${sub.name} como ${isReceived ? 'Pendente' : 'Recebido'}`}
+                                    className="mx-auto flex items-center justify-center p-1 rounded-full hover:bg-zinc-800 transition cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
+                                  >
+                                    {isAutoDetected ? (
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-400 animate-in zoom-in-75 duration-200" />
+                                        <span className="text-[7px] text-emerald-400 font-bold uppercase tracking-widest leading-none">Lançado</span>
+                                      </div>
+                                    ) : isManualReceived ? (
+                                      <div className="flex flex-col items-center justify-center gap-0.5">
+                                        <CheckCircle2 className="w-5 h-5 text-amber-500 animate-in zoom-in-75 duration-200" />
+                                        <span className="text-[7px] text-amber-500 font-bold uppercase tracking-widest leading-none">Manual</span>
+                                      </div>
+                                    ) : (
+                                      <Circle className="w-5 h-5 text-zinc-600 hover:text-amber-500/60 transition" />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
                             );
                           })}
@@ -453,7 +532,11 @@ export default function CoordGradesControl() {
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-zinc-400">
                 <div className="flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Recebido</span>
+                  <span>Sincronizado (Notas Lançadas no Diário)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-amber-500" />
+                  <span>Entregue Manual</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Circle className="w-4 h-4 text-zinc-600" />
