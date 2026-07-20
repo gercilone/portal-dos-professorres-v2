@@ -51,6 +51,32 @@ export function cleanDataForFirestore(obj: any): any {
 // Lazy safe Firestore initialization
 let firestoreInstance: any = null;
 
+// Register global uncaught error listeners to handle rare Firestore SDK assertion failures gracefully
+if (typeof window !== 'undefined') {
+  const handleGlobalFirestoreAssertionError = (event: ErrorEvent | PromiseRejectionEvent) => {
+    const error = 'reason' in event ? event.reason : event.error;
+    if (error) {
+      const errMsg = String(error.message || error).toLowerCase();
+      if (
+        errMsg.includes('firestore') &&
+        (errMsg.includes('assertion failed') || errMsg.includes('unexpected state') || errMsg.includes('ca9') || errMsg.includes('b815'))
+      ) {
+        console.warn('Intercepted uncaught Firestore assertion failure. Activating offline contingency mode to prevent a page crash.');
+        localStorage.setItem('portal_cloud_fallback', 'true');
+        window.dispatchEvent(new Event('storage'));
+        
+        // Prevent default browser behavior if possible to keep the app highly responsive
+        if (typeof event.preventDefault === 'function') {
+          event.preventDefault();
+        }
+      }
+    }
+  };
+
+  window.addEventListener('error', handleGlobalFirestoreAssertionError);
+  window.addEventListener('unhandledrejection', handleGlobalFirestoreAssertionError);
+}
+
 export function getFirestoreInstance() {
   if (firestoreInstance) return firestoreInstance;
   try {
@@ -60,10 +86,10 @@ export function getFirestoreInstance() {
     }
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     
-    // Use initializeFirestore with experimentalForceLongPolling for robust connections inside iframes and sandboxes
+    // Use initializeFirestore with experimentalAutoDetectLongPolling for stable, auto-recovering connections
     try {
       firestoreInstance = initializeFirestore(app, {
-        experimentalForceLongPolling: true
+        experimentalAutoDetectLongPolling: true
       }, firebaseConfig.firestoreDatabaseId || '(default)');
     } catch (e) {
       // Fallback to standard getFirestore if initializeFirestore fails
@@ -159,6 +185,10 @@ export function handleFirestoreError(error: any) {
     errMsg.includes('connection failed') ||
     errMsg.includes('failed to connect') ||
     errMsg.includes('offline') ||
+    errMsg.includes('unexpected state') ||
+    errMsg.includes('assertion failed') ||
+    errMsg.includes('ca9') ||
+    errMsg.includes('b815') ||
     errCode.includes('unavailable')
   ) {
     console.warn('Firestore offline/connection or quota issue detected. Activating offline contingency mode.');

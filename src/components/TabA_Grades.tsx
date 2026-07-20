@@ -3,7 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, BimonthlyGrade, AssignmentDescription, ExtraGrade } from '../types';
 import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload, Sparkles, Trash2 } from 'lucide-react';
-import { pushTeacherDataToCloud } from '../firebase';
+import {
+  pushTeacherDataToCloud,
+  getGlobalSchools,
+  getGlobalClasses,
+  getGlobalSubjects,
+  saveGlobalGradesControl
+} from '../firebase';
 
 interface TabAGradesProps {
   schoolId: number | undefined;
@@ -27,12 +33,84 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
 
+  const checkAndSyncGradesControl = async () => {
+    if (!classId || !subjectId || !bimonthly) return;
+
+    try {
+      const localClassObj = await db.classes.get(classId);
+      if (!localClassObj) return;
+
+      const localSchoolObj = await db.schools.get(localClassObj.schoolId);
+      if (!localSchoolObj) return;
+
+      const localSubjectObj = await db.subjects.get(subjectId);
+      if (!localSubjectObj) return;
+
+      const [globalSchools, globalClasses, globalSubjects] = await Promise.all([
+        getGlobalSchools(),
+        getGlobalClasses(),
+        getGlobalSubjects()
+      ]);
+
+      const globalSchool = globalSchools.find(
+        (gs: any) => gs.name.toLowerCase() === localSchoolObj.name.toLowerCase()
+      );
+      if (!globalSchool) return;
+
+      const globalClass = globalClasses.find(
+        (gc: any) => gc.name.toLowerCase() === localClassObj.name.toLowerCase() && gc.schoolId === globalSchool.id
+      );
+      if (!globalClass) return;
+
+      const globalSubject = globalSubjects.find(
+        (gs: any) => gs.name.toLowerCase() === localSubjectObj.name.toLowerCase()
+      );
+      if (!globalSubject) return;
+
+      const localStudents = await db.students.where({ classId }).toArray();
+      const activeStudentsList = localStudents.filter(s => s.active !== false);
+
+      if (activeStudentsList.length === 0) return;
+
+      const localGrades = await db.bimonthlyGrades
+        .where('subjectId')
+        .equals(subjectId)
+        .filter(g => g.bimonthly === bimonthly)
+        .toArray();
+
+      const allHaveExam = activeStudentsList.every(student => {
+        const grade = localGrades.find(g => g.studentId === student.id);
+        return grade !== undefined && grade.exam !== undefined && grade.exam !== null && !isNaN(grade.exam);
+      });
+
+      const bimonthlyKey = `${bimonthly}b`;
+      const entryId = `${globalClass.id}_${globalSubject.id}_${bimonthlyKey}`;
+
+      const updatedEntry = {
+        id: entryId,
+        classId: globalClass.id,
+        subjectId: globalSubject.id,
+        bimonthly: bimonthlyKey,
+        received: allHaveExam,
+        updatedAt: Date.now()
+      };
+
+      await saveGlobalGradesControl(updatedEntry);
+
+      localStorage.setItem('portal_has_unsaved_changes', 'true');
+      window.dispatchEvent(new Event('storage'));
+    } catch (err) {
+      console.error('Error auto-syncing grades control:', err);
+    }
+  };
+
   const handleSaveGrades = async () => {
     const activeUser = localStorage.getItem('portal_active_user');
     if (!activeUser) return;
     setIsSaving(true);
     setSaveSuccess(null);
     try {
+      await checkAndSyncGradesControl();
       const success = await pushTeacherDataToCloud(activeUser, db, true);
       setSaveSuccess(success);
       setTimeout(() => setSaveSuccess(null), 3000);
@@ -253,6 +331,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
       // Synchronize with cloud if logged in
       const activeUser = localStorage.getItem('portal_active_user');
       if (activeUser) {
+        await checkAndSyncGradesControl();
         await pushTeacherDataToCloud(activeUser, db);
       }
 
@@ -312,6 +391,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
           // Sync with cloud if logged in
           const activeUser = localStorage.getItem('portal_active_user');
           if (activeUser) {
+            await checkAndSyncGradesControl();
             await pushTeacherDataToCloud(activeUser, db);
           }
 

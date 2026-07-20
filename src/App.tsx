@@ -135,13 +135,24 @@ export default function App() {
   }, [theme]);
 
   // FONT SIZE STATE
-  const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl'>(() => {
-    return (localStorage.getItem('portal_font_size') as 'normal' | 'large' | 'xl') || 'normal';
+  const [fontSize, setFontSize] = useState<'normal' | 'large' | 'xl' | 'xxl'>(() => {
+    const saved = localStorage.getItem('portal_font_size') as 'normal' | 'large' | 'xl' | 'xxl' | null;
+    if (saved) return saved;
+
+    // Detect if running on a computer (non-mobile device with screen >= 1024px)
+    if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+      const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobi/i.test(navigator.userAgent);
+      const isLargeScreen = window.innerWidth >= 1024;
+      if (!isMobileUA && isLargeScreen) {
+        return 'large'; // Default to a larger font on computer!
+      }
+    }
+    return 'normal';
   });
 
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.remove('font-size-normal', 'font-size-large', 'font-size-xl');
+    root.classList.remove('font-size-normal', 'font-size-large', 'font-size-xl', 'font-size-xxl');
     root.classList.add(`font-size-${fontSize}`);
     localStorage.setItem('portal_font_size', fontSize);
   }, [fontSize]);
@@ -1697,7 +1708,7 @@ export default function App() {
       <div id="portal-app-root" className="min-h-screen bg-[#09090b] text-zinc-100 flex flex-col font-sans antialiased selection:bg-amber-600/30 selection:text-amber-200">
         {/* Top Header */}
         <header className="bg-zinc-900 border-b border-zinc-800 p-4 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-amber-600/15 border border-amber-500/30 text-amber-500 rounded-xl flex items-center justify-center shrink-0">
                 <Shield className="w-5 h-5" />
@@ -1711,18 +1722,19 @@ export default function App() {
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
               <div className="flex items-center gap-1.5 bg-zinc-850 border border-zinc-700 rounded-lg px-2.5 py-1">
                 <span className="text-[10px] text-zinc-400 font-extrabold uppercase select-none">Fonte:</span>
                 <select
                   value={fontSize}
-                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl')}
+                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl' | 'xxl')}
                   className="bg-transparent border-none text-zinc-200 font-bold text-xs focus:outline-none cursor-pointer p-0 text-center pr-2"
                   style={{ colorScheme: 'dark' }}
                 >
                   <option value="normal" className="bg-zinc-900 text-zinc-200">Padrão</option>
                   <option value="large" className="bg-zinc-900 text-zinc-200">Grande</option>
                   <option value="xl" className="bg-zinc-900 text-zinc-200">Gigante</option>
+                  <option value="xxl" className="bg-zinc-900 text-zinc-200">Super Gigante</option>
                 </select>
               </div>
 
@@ -2327,17 +2339,17 @@ export default function App() {
       )}
 
       {isInspectingMode && (
-        <div className="bg-amber-600 text-zinc-950 text-xs font-bold py-2.5 px-4 flex items-center justify-between gap-4 shadow-md relative z-50 animate-in slide-in-from-top duration-300 select-none">
+        <div className="bg-amber-600 text-zinc-950 text-xs font-bold py-2.5 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md relative z-50 animate-in slide-in-from-top duration-300 select-none">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 animate-bounce" />
-            <span>
+            <ShieldAlert className="w-4 h-4 animate-bounce shrink-0" />
+            <span className="text-left">
               MODO DE INSPEÇÃO (SOMENTE LEITURA): Você está visualizando o diário do(a) professor(a) <strong className="underline text-black font-extrabold">{teacherName}</strong>. Alterações estão bloqueadas.
             </span>
           </div>
           <button
             type="button"
             onClick={handleExitInspectingMode}
-            className="bg-zinc-950 hover:bg-zinc-900 text-white font-extrabold px-3 py-1 rounded-lg transition shrink-0 flex items-center gap-1 cursor-pointer"
+            className="bg-zinc-950 hover:bg-zinc-900 text-white font-extrabold px-3 py-1.5 rounded-lg transition shrink-0 flex items-center gap-1 cursor-pointer w-full sm:w-auto justify-center"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Voltar ao Painel
           </button>

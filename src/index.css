@@ -183,8 +183,11 @@ html.font-size-large {
 html.font-size-xl {
   font-size: 21px !important; /* ~131% scale */
 }
+html.font-size-xxl {
+  font-size: 24px !important; /* 150% scale */
+}
 
-/* Make sure absolute-sized badges and tags also scale up in large/xl modes */
+/* Make sure absolute-sized badges and tags also scale up in large/xl/xxl modes */
 html.font-size-large .text-\[9px\],
 html.font-size-large .text-\[10px\],
 html.font-size-large .text-\[11px\],
@@ -215,5 +218,23 @@ html.font-size-xl input {
 html.font-size-xl .text-base,
 html.font-size-xl h3 {
   font-size: 19px !important;
+}
+
+html.font-size-xxl .text-\[9px\],
+html.font-size-xxl .text-\[10px\],
+html.font-size-xxl .text-\[11px\],
+html.font-size-xxl .text-\[12px\],
+html.font-size-xxl .text-xs,
+html.font-size-xxl .text-\[13px\] {
+  font-size: 17px !important;
+}
+html.font-size-xxl .text-sm,
+html.font-size-xxl select,
+html.font-size-xxl input {
+  font-size: 19px !important;
+}
+html.font-size-xxl .text-base,
+html.font-size-xxl h3 {
+  font-size: 21px !important;
 }
 

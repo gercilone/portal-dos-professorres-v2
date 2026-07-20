@@ -19,8 +19,8 @@ interface HeaderFiltersProps {
   onLogout: () => void;
   theme?: 'light' | 'dark';
   setTheme?: (t: 'light' | 'dark') => void;
-  fontSize?: 'normal' | 'large' | 'xl';
-  setFontSize?: (sz: 'normal' | 'large' | 'xl') => void;
+  fontSize?: 'normal' | 'large' | 'xl' | 'xxl';
+  setFontSize?: (sz: 'normal' | 'large' | 'xl' | 'xxl') => void;
 }
 
 export default function HeaderFilters({
@@ -214,7 +214,7 @@ export default function HeaderFilters({
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
         
         {/* Top Bar: Logo, Teacher info, Logout */}
-        <div className="flex items-center justify-between w-full gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-4">
           <div className="flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shrink-0 transition-colors ${
               selectedSchoolId ? (schools.findIndex(s => s.id === selectedSchoolId) === 1 ? 'bg-emerald-600 shadow-emerald-500/10' : 'bg-blue-600 shadow-blue-500/10') : 'bg-blue-600'
@@ -231,7 +231,7 @@ export default function HeaderFilters({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
             {/* Direct Save Button */}
             <button
               id="header-manual-save-btn"
@@ -265,23 +265,24 @@ export default function HeaderFilters({
                   : saveSuccess === false
                   ? 'Erro ao Salvar'
                   : hasUnsavedChanges
-                  ? 'Salvar Alterações (Nuvem)'
+                  ? 'Salvar Alterações'
                   : 'Salvar Diário'}
               </span>
             </button>
 
             {setFontSize && (
               <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1">
-                <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Tamanho da Fonte:</span>
+                <span className="text-[10px] text-zinc-500 font-extrabold uppercase select-none">Fonte:</span>
                 <select
                   value={fontSize}
-                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl')}
+                  onChange={(e) => setFontSize(e.target.value as 'normal' | 'large' | 'xl' | 'xxl')}
                   className="bg-transparent border-none text-zinc-300 font-bold text-xs focus:outline-none cursor-pointer focus:ring-0 p-0 text-center pr-2"
                   style={{ colorScheme: 'dark' }}
                 >
                   <option value="normal" className="bg-zinc-950 text-zinc-300">Padrão</option>
                   <option value="large" className="bg-zinc-950 text-zinc-300">Grande</option>
                   <option value="xl" className="bg-zinc-950 text-zinc-300">Gigante</option>
+                  <option value="xxl" className="bg-zinc-950 text-zinc-300">Super Gigante</option>
                 </select>
               </div>
             )}

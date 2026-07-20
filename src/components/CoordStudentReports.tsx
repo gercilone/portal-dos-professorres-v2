@@ -574,47 +574,149 @@ export default function CoordStudentReports() {
                             <th className="py-3 px-5">Disciplina</th>
                             <th className="py-3 px-4 text-center w-28">1º Bim</th>
                             <th className="py-3 px-4 text-center w-28">2º Bim</th>
+                            <th className="py-3 px-4 text-center w-28 bg-amber-500/5 border-x border-zinc-900 text-amber-400 font-extrabold">R1</th>
                             <th className="py-3 px-4 text-center w-28">3º Bim</th>
                             <th className="py-3 px-4 text-center w-28">4º Bim</th>
+                            <th className="py-3 px-4 text-center w-28 bg-amber-500/5 border-x border-zinc-900 text-amber-400 font-extrabold">R2</th>
+                            <th className="py-3 px-4 text-center w-28 bg-rose-500/5 border-l border-zinc-900 text-red-400 font-extrabold">PF</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-900 text-xs">
                           {subjectsInClass.map(subj => {
+                            const extraRecord = reportData?.extraGrades.find(
+                              eg => String(eg.studentId) === String(selectedStudent.id) && 
+                                    String(eg.subjectId) === String(subj.id)
+                            );
+                            const recSem1 = extraRecord?.recSem1;
+                            const recSem2 = extraRecord?.recSem2;
+                            const finalExam = extraRecord?.finalExam;
+
                             return (
                               <tr key={subj.id} className="hover:bg-zinc-900/30 text-zinc-300">
                                 <td className="py-3 px-5 font-bold text-zinc-200">{subj.name}</td>
-                                {[1, 2, 3, 4].map(bim => {
-                                  const { media, hasGrades } = calculateStudentAverage(subj.id, bim);
-                                  const absences = getAbsences(subj.id, bim);
+                                
+                                {/* 1º Bim */}
+                                {(() => {
+                                  const { media, hasGrades } = calculateStudentAverage(subj.id, 1);
+                                  const absences = getAbsences(subj.id, 1);
                                   const isBelowPassing = media !== null && media < 7.0;
-
                                   return (
-                                    <td key={bim} className="py-3 px-4 text-center">
+                                    <td className="py-3 px-4 text-center">
                                       {hasGrades && media !== null ? (
                                         <div className="space-y-0.5">
-                                          <span className={`font-mono font-black block text-sm ${
-                                            isBelowPassing ? 'text-rose-400' : 'text-emerald-400'
-                                          }`}>
+                                          <span className={`font-mono font-black block text-sm ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>
                                             {media.toFixed(1).replace('.', ',')}
                                           </span>
-                                          {absences > 0 ? (
-                                            <span className="text-[10px] text-zinc-500 font-mono block">{absences}f</span>
-                                          ) : (
-                                            <span className="text-[10px] text-zinc-650 font-mono block">0f</span>
-                                          )}
+                                          <span className="text-[10px] text-zinc-500 font-mono block">{absences > 0 ? `${absences}f` : '0f'}</span>
                                         </div>
                                       ) : (
                                         <span className="text-zinc-650 font-mono block py-1">-</span>
                                       )}
                                     </td>
                                   );
-                                })}
+                                })()}
+
+                                {/* 2º Bim */}
+                                {(() => {
+                                  const { media, hasGrades } = calculateStudentAverage(subj.id, 2);
+                                  const absences = getAbsences(subj.id, 2);
+                                  const isBelowPassing = media !== null && media < 7.0;
+                                  return (
+                                    <td className="py-3 px-4 text-center">
+                                      {hasGrades && media !== null ? (
+                                        <div className="space-y-0.5">
+                                          <span className={`font-mono font-black block text-sm ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                            {media.toFixed(1).replace('.', ',')}
+                                          </span>
+                                          <span className="text-[10px] text-zinc-500 font-mono block">{absences > 0 ? `${absences}f` : '0f'}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-zinc-650 font-mono block py-1">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })()}
+
+                                {/* R1 */}
+                                <td className="py-3 px-4 text-center bg-amber-500/5 border-x border-zinc-900">
+                                  {recSem1 !== undefined && recSem1 !== null ? (
+                                    <span className="font-mono font-black text-sm text-amber-400">
+                                      {Number(recSem1).toFixed(1).replace('.', ',')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-700 font-mono">-</span>
+                                  )}
+                                </td>
+
+                                {/* 3º Bim */}
+                                {(() => {
+                                  const { media, hasGrades } = calculateStudentAverage(subj.id, 3);
+                                  const absences = getAbsences(subj.id, 3);
+                                  const isBelowPassing = media !== null && media < 7.0;
+                                  return (
+                                    <td className="py-3 px-4 text-center">
+                                      {hasGrades && media !== null ? (
+                                        <div className="space-y-0.5">
+                                          <span className={`font-mono font-black block text-sm ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                            {media.toFixed(1).replace('.', ',')}
+                                          </span>
+                                          <span className="text-[10px] text-zinc-500 font-mono block">{absences > 0 ? `${absences}f` : '0f'}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-zinc-650 font-mono block py-1">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })()}
+
+                                {/* 4º Bim */}
+                                {(() => {
+                                  const { media, hasGrades } = calculateStudentAverage(subj.id, 4);
+                                  const absences = getAbsences(subj.id, 4);
+                                  const isBelowPassing = media !== null && media < 7.0;
+                                  return (
+                                    <td className="py-3 px-4 text-center">
+                                      {hasGrades && media !== null ? (
+                                        <div className="space-y-0.5">
+                                          <span className={`font-mono font-black block text-sm ${isBelowPassing ? 'text-rose-400' : 'text-emerald-400'}`}>
+                                            {media.toFixed(1).replace('.', ',')}
+                                          </span>
+                                          <span className="text-[10px] text-zinc-500 font-mono block">{absences > 0 ? `${absences}f` : '0f'}</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-zinc-650 font-mono block py-1">-</span>
+                                      )}
+                                    </td>
+                                  );
+                                })()}
+
+                                {/* R2 */}
+                                <td className="py-3 px-4 text-center bg-amber-500/5 border-x border-zinc-900">
+                                  {recSem2 !== undefined && recSem2 !== null ? (
+                                    <span className="font-mono font-black text-sm text-amber-400">
+                                      {Number(recSem2).toFixed(1).replace('.', ',')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-700 font-mono">-</span>
+                                  )}
+                                </td>
+
+                                {/* PF */}
+                                <td className="py-3 px-4 text-center bg-rose-500/5 border-l border-zinc-900">
+                                  {finalExam !== undefined && finalExam !== null ? (
+                                    <span className="font-mono font-black text-sm text-red-400">
+                                      {Number(finalExam).toFixed(1).replace('.', ',')}
+                                    </span>
+                                  ) : (
+                                    <span className="text-zinc-700 font-mono">-</span>
+                                  )}
+                                </td>
                               </tr>
                             );
                           })}
                           {subjectsInClass.length === 0 && (
                             <tr>
-                              <td colSpan={5} className="py-8 text-center text-zinc-500 text-xs font-semibold">
+                              <td colSpan={8} className="py-8 text-center text-zinc-500 text-xs font-semibold">
                                 Nenhuma disciplina vinculada a esta turma.
                               </td>
                             </tr>
@@ -680,77 +782,131 @@ export default function CoordStudentReports() {
                                     Nenhuma atividade ou nota lançada pelos professores nesta disciplina.
                                   </div>
                                 ) : (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {[1, 2, 3, 4].map(bim => {
-                                      const { media, hasGrades, record } = calculateStudentAverage(subj.id, bim);
-                                      if (!hasGrades) return null;
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      {[1, 2, 3, 4].map(bim => {
+                                        const { media, hasGrades, record } = calculateStudentAverage(subj.id, bim);
+                                        if (!hasGrades) return null;
 
-                                      const labels = getAssignmentLabels(subj.id, bim);
-                                      const absences = getAbsences(subj.id, bim);
-                                      const isBelowPassing = media !== null && media < 7.0;
+                                        const labels = getAssignmentLabels(subj.id, bim);
+                                        const absences = getAbsences(subj.id, bim);
+                                        const isBelowPassing = media !== null && media < 7.0;
 
-                                      const renderValue = (val: number | undefined) => {
-                                        if (val === undefined) return <span className="text-zinc-700 font-mono font-medium">-</span>;
-                                        if (val === 0) return <span className="text-rose-500 font-mono font-black">0,0</span>;
-                                        return <span className="text-emerald-500 font-mono font-bold">{val.toFixed(1).replace('.', ',')}</span>;
-                                      };
+                                        const renderValue = (val: number | undefined) => {
+                                          if (val === undefined) return <span className="text-zinc-700 font-mono font-medium">-</span>;
+                                          if (val === 0) return <span className="text-rose-500 font-mono font-black">0,0</span>;
+                                          return <span className="text-emerald-500 font-mono font-bold">{val.toFixed(1).replace('.', ',')}</span>;
+                                        };
 
-                                      return (
-                                        <div key={bim} className="bg-zinc-900/60 border border-zinc-850/80 rounded-xl p-4 space-y-3.5">
-                                          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-                                            <span className="text-xs font-extrabold text-amber-400 font-mono">{bim}º Bimestre</span>
-                                            <div className="flex items-center gap-3">
-                                              <span className="text-[10px] text-zinc-500 font-mono">{absences} Faltas</span>
-                                              {media !== null && (
-                                                <span className={`text-xs font-mono font-black px-2 py-0.5 rounded ${
-                                                  isBelowPassing ? 'bg-red-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'
-                                                }`}>
-                                                  Média: {media.toFixed(1).replace('.', ',')}
+                                        return (
+                                          <div key={bim} className="bg-zinc-900/60 border border-zinc-850/80 rounded-xl p-4 space-y-3.5">
+                                            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                              <span className="text-xs font-extrabold text-amber-400 font-mono">{bim}º Bimestre</span>
+                                              <div className="flex items-center gap-3">
+                                                <span className="text-[10px] text-zinc-500 font-mono">{absences} Faltas</span>
+                                                {media !== null && (
+                                                  <span className={`text-xs font-mono font-black px-2 py-0.5 rounded ${
+                                                    isBelowPassing ? 'bg-red-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'
+                                                  }`}>
+                                                    Média: {media.toFixed(1).replace('.', ',')}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Activities details */}
+                                            <div className="space-y-2 text-xs">
+                                              <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
+                                                <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t1}>
+                                                  T1: <span className="text-zinc-500 font-normal">{labels?.t1}</span>
                                                 </span>
-                                              )}
+                                                <span>{renderValue(record?.t1)}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
+                                                <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t2}>
+                                                  T2: <span className="text-zinc-500 font-normal">{labels?.t2}</span>
+                                                </span>
+                                                <span>{renderValue(record?.t2)}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
+                                                <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t3}>
+                                                  T3: <span className="text-zinc-500 font-normal">{labels?.t3}</span>
+                                                </span>
+                                                <span>{renderValue(record?.t3)}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
+                                                <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t4}>
+                                                  T4: <span className="text-zinc-500 font-normal">{labels?.t4}</span>
+                                                </span>
+                                                <span>{renderValue(record?.t4)}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
+                                                <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t5}>
+                                                  T5: <span className="text-zinc-500 font-normal">{labels?.t5}</span>
+                                                </span>
+                                                <span>{renderValue(record?.t5)}</span>
+                                              </div>
+                                              <div className="flex justify-between items-center bg-zinc-900/80 px-2.5 py-1.5 rounded-lg border border-zinc-800/60">
+                                                <span className="text-zinc-300 font-bold">Prova Bimestral</span>
+                                                <span>{renderValue(record?.exam)}</span>
+                                              </div>
                                             </div>
                                           </div>
+                                        );
+                                      })}
+                                    </div>
 
-                                          {/* Activities details */}
-                                          <div className="space-y-2 text-xs">
+                                    {(() => {
+                                      const extraRecord = reportData?.extraGrades.find(
+                                        eg => String(eg.studentId) === String(selectedStudent.id) && 
+                                              String(eg.subjectId) === String(subj.id)
+                                      );
+                                      if (!extraRecord) return null;
+                                      const recSem1 = extraRecord.recSem1;
+                                      const recSem2 = extraRecord.recSem2;
+                                      const finalExam = extraRecord.finalExam;
+                                      if (recSem1 === undefined && recSem2 === undefined && finalExam === undefined) return null;
+
+                                      return (
+                                        <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-xl p-4 space-y-3 mt-4">
+                                          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+                                            <span className="text-xs font-extrabold text-amber-500 font-mono">Recuperações Semestrais & Exame Final</span>
+                                          </div>
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                                             <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
-                                              <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t1}>
-                                                T1: <span className="text-zinc-500 font-normal">{labels?.t1}</span>
+                                              <span className="text-zinc-400 font-medium">Rec. Semestral 1 (R1)</span>
+                                              <span>
+                                                {recSem1 !== undefined && recSem1 !== null ? (
+                                                  <span className="text-amber-400 font-mono font-bold">{Number(recSem1).toFixed(1).replace('.', ',')}</span>
+                                                ) : (
+                                                  <span className="text-zinc-700 font-mono">-</span>
+                                                )}
                                               </span>
-                                              <span>{renderValue(record?.t1)}</span>
                                             </div>
                                             <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
-                                              <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t2}>
-                                                T2: <span className="text-zinc-500 font-normal">{labels?.t2}</span>
+                                              <span className="text-zinc-400 font-medium">Rec. Semestral 2 (R2)</span>
+                                              <span>
+                                                {recSem2 !== undefined && recSem2 !== null ? (
+                                                  <span className="text-amber-400 font-mono font-bold">{Number(recSem2).toFixed(1).replace('.', ',')}</span>
+                                                ) : (
+                                                  <span className="text-zinc-700 font-mono">-</span>
+                                                )}
                                               </span>
-                                              <span>{renderValue(record?.t2)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
-                                              <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t3}>
-                                                T3: <span className="text-zinc-500 font-normal">{labels?.t3}</span>
-                                              </span>
-                                              <span>{renderValue(record?.t3)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
-                                              <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t4}>
-                                                T4: <span className="text-zinc-500 font-normal">{labels?.t4}</span>
-                                              </span>
-                                              <span>{renderValue(record?.t4)}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center bg-zinc-950/40 px-2.5 py-1.5 rounded-lg border border-zinc-900">
-                                              <span className="text-zinc-400 truncate pr-2 font-medium" title={labels?.t5}>
-                                                T5: <span className="text-zinc-500 font-normal">{labels?.t5}</span>
-                                              </span>
-                                              <span>{renderValue(record?.t5)}</span>
                                             </div>
                                             <div className="flex justify-between items-center bg-zinc-900/80 px-2.5 py-1.5 rounded-lg border border-zinc-800/60">
-                                              <span className="text-zinc-300 font-bold">Prova Bimestral</span>
-                                              <span>{renderValue(record?.exam)}</span>
+                                              <span className="text-zinc-300 font-bold font-mono">Exame Final (PF)</span>
+                                              <span>
+                                                {finalExam !== undefined && finalExam !== null ? (
+                                                  <span className="text-red-400 font-mono font-bold">{Number(finalExam).toFixed(1).replace('.', ',')}</span>
+                                                ) : (
+                                                  <span className="text-zinc-700 font-mono">-</span>
+                                                )}
+                                              </span>
                                             </div>
                                           </div>
                                         </div>
                                       );
-                                    })}
+                                    })()}
                                   </div>
                                 )}
                               </div>
