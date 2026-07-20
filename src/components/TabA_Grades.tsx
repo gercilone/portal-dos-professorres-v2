@@ -78,7 +78,8 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
         .filter(g => g.bimonthly === bimonthly)
         .toArray();
 
-      const allHaveExam = activeStudentsList.every(student => {
+      // The submission is automatically marked as received as soon as the professor registers the master's evaluation (test/exam) for at least one active student
+      const hasExam = activeStudentsList.some(student => {
         const grade = localGrades.find(g => g.studentId === student.id);
         return grade !== undefined && grade.exam !== undefined && grade.exam !== null && !isNaN(grade.exam);
       });
@@ -91,7 +92,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
         classId: globalClass.id,
         subjectId: globalSubject.id,
         bimonthly: bimonthlyKey,
-        received: allHaveExam,
+        received: hasExam,
         updatedAt: Date.now()
       };
 

@@ -1203,15 +1203,54 @@ export default function App() {
           }
           try {
             const forcePull = localStorage.getItem('portal_force_cloud_pull') === 'true';
-            if (forcePull) {
+            const initialSyncDone = localStorage.getItem('portal_coord_initial_sync_done') === 'true';
+            const sessionSyncPulled = sessionStorage.getItem('portal_coord_session_sync_pulled') === 'true';
+
+            if (forcePull || !initialSyncDone || !sessionSyncPulled) {
               setIsInitialSyncing(true);
-              setSyncStatusMessage('Sincronizando com a Nuvem... Carregando dados da coordenação e turmas...');
+              setSyncStatusMessage('Sincronizando com a Nuvem... Carregando dados da coordenação, turmas e professores...');
               // Wait 1.2 seconds for a smooth visual feedback
               await new Promise((r) => setTimeout(r, 1200));
+
+              const [schs, cls, stds, subs, wls, gcs] = await Promise.all([
+                getGlobalSchools(),
+                getGlobalClasses(),
+                getGlobalStudents(),
+                getGlobalSubjects(),
+                getGlobalWorkloads(),
+                getGlobalGradesControl()
+              ]);
+
+              localStorage.setItem('portal_global_schools', JSON.stringify(schs));
+              localStorage.setItem('portal_global_classes', JSON.stringify(cls));
+              localStorage.setItem('portal_global_students', JSON.stringify(stds));
+              localStorage.setItem('portal_global_subjects', JSON.stringify(subs));
+              localStorage.setItem('portal_global_workloads', JSON.stringify(wls));
+              localStorage.setItem('portal_global_grades_control', JSON.stringify(gcs));
+
               await syncCoordinatorsListInCloud();
-              await syncProfessorsListInCloud();
-              localStorage.removeItem('portal_force_cloud_pull');
+              const updatedProfsList = await syncProfessorsListInCloud();
+              if (updatedProfsList && updatedProfsList.length > 0) {
+                setProfessors(updatedProfsList);
+              }
+
+              localStorage.setItem('portal_coord_initial_sync_done', 'true');
+              sessionStorage.setItem('portal_coord_session_sync_pulled', 'true');
+              
+              if (forcePull) {
+                localStorage.removeItem('portal_force_cloud_pull');
+              }
               setIsInitialSyncing(false);
+              // Force reload to let all sub-components see the freshly cached global datasets in localStorage
+              window.location.reload();
+            } else {
+              // Silently sync in background to keep data fresh
+              syncCoordinatorsListInCloud().catch(() => {});
+              syncProfessorsListInCloud().then((updatedProfs) => {
+                if (updatedProfs && updatedProfs.length > 0) {
+                  setProfessors(updatedProfs);
+                }
+              }).catch(() => {});
             }
           } catch (err) {
             console.error('Error during coordinator startup sync:', err);
