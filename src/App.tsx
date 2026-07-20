@@ -13,6 +13,7 @@ import CoordGlobalSubjects from './components/CoordGlobalSubjects';
 import CoordBackups from './components/CoordBackups';
 import CoordGradesControl from './components/CoordGradesControl';
 import CoordClassReports from './components/CoordClassReports';
+import CoordStudentReports from './components/CoordStudentReports';
 import { sortClasses } from './types';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from './utils/deduplicate';
 import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud, BarChart2 } from 'lucide-react';
@@ -338,7 +339,7 @@ export default function App() {
   });
 
   // Coordinator dashboard states
-  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects' | 'backups' | 'grades-control' | 'class-reports'>('inspect');
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects' | 'backups' | 'grades-control' | 'class-reports' | 'student-reports'>('inspect');
   const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Coordinator Account creation form
@@ -1809,7 +1810,7 @@ export default function App() {
 
         {/* Dashboard Navigation Tabs */}
         <div className="bg-zinc-900/40 border-b border-zinc-800/50 py-3">
-          <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+          <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2">
             <button
               onClick={() => setCoordActiveTab('inspect')}
               className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
@@ -1831,6 +1832,17 @@ export default function App() {
             >
               <CheckSquare className="w-4 h-4 shrink-0" />
               <span className="text-center">Controle de Notas</span>
+            </button>
+            <button
+              onClick={() => setCoordActiveTab('student-reports')}
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'student-reports'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+              }`}
+            >
+              <FileText className="w-4 h-4 shrink-0" />
+              <span className="text-center">Fichas de Alunos</span>
             </button>
             <button
               onClick={() => setCoordActiveTab('class-reports')}
@@ -1914,6 +1926,10 @@ export default function App() {
 
           {coordActiveTab === 'class-reports' && (
             <CoordClassReports />
+          )}
+
+          {coordActiveTab === 'student-reports' && (
+            <CoordStudentReports />
           )}
 
           {coordActiveTab === 'inspect' && (

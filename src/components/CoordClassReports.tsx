@@ -31,6 +31,8 @@ import {
   CheckSquare
 } from 'lucide-react';
 import CoordClassComparative from './CoordClassComparative';
+import StudentReportModal from './StudentReportModal';
+import { AnimatePresence } from 'motion/react';
 
 export default function CoordClassReports() {
   const [schools, setSchools] = useState<GlobalSchool[]>([]);
@@ -66,6 +68,11 @@ export default function CoordClassReports() {
 
   // Sub-tabs
   const [activeSubTab, setActiveSubTab] = useState<'individual' | 'comparative'>('individual');
+
+  // Modal states for Student Report
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState<GlobalStudent | null>(null);
+  const [selectedStudentRollNumber, setSelectedStudentRollNumber] = useState<number>(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     loadMetadata();
@@ -874,6 +881,7 @@ export default function CoordClassReports() {
                             <th className="py-3 px-4 text-center w-24">Média</th>
                             <th className="py-3 px-4 text-center w-24">Presença</th>
                             <th className="py-3 px-4 text-center w-20">Faltas</th>
+                            <th className="py-3 px-4 text-center w-24">Boletim</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-900 text-xs">
@@ -904,6 +912,24 @@ export default function CoordClassReports() {
                                   </span>
                                 </td>
                                 <td className="py-2.5 px-4 text-center font-mono text-rose-400 font-bold">{row.totalAbsences}</td>
+                                <td className="py-2.5 px-4 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const stud = students.find(s => String(s.id) === String(row.studentId));
+                                      if (stud) {
+                                        setSelectedStudentForModal(stud);
+                                        setSelectedStudentRollNumber(row.rollNumber || 0);
+                                        setIsModalOpen(true);
+                                      }
+                                    }}
+                                    className="p-1.5 bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-zinc-950 rounded-lg transition duration-200 cursor-pointer flex items-center justify-center gap-1.5 mx-auto text-[10px] font-extrabold"
+                                    title="Visualizar Boletim Individual"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                    <span>Boletim</span>
+                                  </button>
+                                </td>
                               </tr>
                             );
                           })}
@@ -1050,6 +1076,23 @@ export default function CoordClassReports() {
       )}
         </>
       )}
+
+      <AnimatePresence>
+        {isModalOpen && (
+          <StudentReportModal
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setSelectedStudentForModal(null);
+            }}
+            student={selectedStudentForModal}
+            className={`${selectedAno} ${selectedTurma}`}
+            rollNumber={selectedStudentRollNumber}
+            subjects={subjectsInClass}
+            reportData={reportData}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
