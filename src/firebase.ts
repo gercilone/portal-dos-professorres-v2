@@ -1148,6 +1148,69 @@ export async function deleteGlobalWorkload(workloadId: string): Promise<void> {
   }
 }
 
+export interface GlobalGradesControl {
+  id: string; // e.g. "classId_subjectId_bimonthly"
+  classId: string;
+  subjectId: string;
+  bimonthly: string; // "1b" | "2b" | "r1" | "3b" | "4b" | "r2"
+  received: boolean;
+  updatedAt?: number;
+}
+
+export async function getGlobalGradesControl(): Promise<GlobalGradesControl[]> {
+  if (isCloudFallback()) {
+    const localStr = localStorage.getItem('portal_global_grades_control');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    const localStr = localStorage.getItem('portal_global_grades_control');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+  try {
+    const colRef = collection(dbInstance, 'global_grades_control');
+    const snapshot = await withTimeout(getDocs(colRef), 4000);
+    const results: GlobalGradesControl[] = [];
+    snapshot.forEach((doc) => {
+      results.push({ ...doc.data() as GlobalGradesControl, id: doc.id });
+    });
+    localStorage.setItem('portal_global_grades_control', JSON.stringify(results));
+    return results;
+  } catch (error) {
+    console.error('Error getting global grades control:', error);
+    handleFirestoreError(error);
+    const localStr = localStorage.getItem('portal_global_grades_control');
+    return localStr ? JSON.parse(localStr) : [];
+  }
+}
+
+export async function saveGlobalGradesControl(entry: GlobalGradesControl): Promise<void> {
+  const localStr = localStorage.getItem('portal_global_grades_control');
+  let list: GlobalGradesControl[] = localStr ? JSON.parse(localStr) : [];
+  const index = list.findIndex(item => item.id === entry.id);
+  if (index !== -1) {
+    list[index] = entry;
+  } else {
+    list.push(entry);
+  }
+  localStorage.setItem('portal_global_grades_control', JSON.stringify(list));
+
+  if (isCloudFallback()) return;
+
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+  try {
+    const docRef = doc(dbInstance, 'global_grades_control', entry.id);
+    await withTimeout(setDoc(docRef, cleanDataForFirestore(entry)), 4000);
+    setCloudFallbackStatus(false);
+  } catch (error) {
+    console.error('Error saving global grades control:', error);
+    handleFirestoreError(error);
+    setCloudFallbackStatus(true);
+  }
+}
+
 // 6. AD-HOC SYSTEM BACKUP FETCHERS
 export async function getGradesBackup(professors: { username: string; teacherName: string }[]): Promise<any[]> {
   if (isCloudFallback()) return [];
@@ -1209,7 +1272,8 @@ export async function pushGlobalDataToCloud(isManual: boolean = false): Promise<
       { key: 'portal_global_classes', col: 'global_classes' },
       { key: 'portal_global_students', col: 'global_students' },
       { key: 'portal_global_subjects', col: 'global_subjects' },
-      { key: 'portal_global_workloads', col: 'global_workloads' }
+      { key: 'portal_global_workloads', col: 'global_workloads' },
+      { key: 'portal_global_grades_control', col: 'global_grades_control' }
     ];
 
     const batches: any[] = [];
@@ -1264,5 +1328,204 @@ export async function pushGlobalDataToCloud(isManual: boolean = false): Promise<
     return false;
   }
 }
+
+export async function getClassReportData(
+  classId: string, 
+  studentsInClass: any[], 
+  workloadsInClass: any[]
+): Promise<{
+  bimonthlyGrades: any[];
+  extraGrades: any[];
+  attendance: any[];
+  lessons: any[];
+  assignmentDescriptions: any[];
+}> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    return { bimonthlyGrades: [], extraGrades: [], attendance: [], lessons: [], assignmentDescriptions: [] };
+  }
+
+  // Find all unique teacher usernames teaching this class
+  const teacherUsernames = Array.from(new Set(
+    workloadsInClass
+      .map(w => w.teacherUsername?.toLowerCase())
+      .filter((u): u is string => !!u)
+  ));
+
+  const bimonthlyGrades: any[] = [];
+  const extraGrades: any[] = [];
+  const attendance: any[] = [];
+  const lessons: any[] = [];
+  const assignmentDescriptions: any[] = [];
+
+  const studentIdsSet = new Set(studentsInClass.map(s => String(s.id)));
+
+  // We can fetch the data for all teachers in parallel
+  await Promise.all(teacherUsernames.map(async (username) => {
+    try {
+      // 1. bimonthlyGrades
+      const gradesRef = collection(dbInstance, `diaries/${username}/bimonthlyGrades`);
+      const gradesSnapshot = await withTimeout(getDocs(gradesRef), 5000);
+      gradesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          bimonthlyGrades.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 2. extraGrades
+      const extraRef = collection(dbInstance, `diaries/${username}/extraGrades`);
+      const extraSnapshot = await withTimeout(getDocs(extraRef), 5000);
+      extraSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          extraGrades.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 3. attendance
+      const attRef = collection(dbInstance, `diaries/${username}/attendance`);
+      const attSnapshot = await withTimeout(getDocs(attRef), 5000);
+      attSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          attendance.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 4. lessons
+      const lessonsRef = collection(dbInstance, `diaries/${username}/lessons`);
+      const lessonsSnapshot = await withTimeout(getDocs(lessonsRef), 5000);
+      lessonsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (String(data.classId) === String(classId)) {
+          lessons.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 5. assignmentDescriptions
+      const descRef = collection(dbInstance, `diaries/${username}/assignmentDescriptions`);
+      const descSnapshot = await withTimeout(getDocs(descRef), 5000);
+      descSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (String(data.classId) === String(classId)) {
+          assignmentDescriptions.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+    } catch (err) {
+      console.error(`Error loading report data for teacher ${username}:`, err);
+    }
+  }));
+
+  return {
+    bimonthlyGrades,
+    extraGrades,
+    attendance,
+    lessons,
+    assignmentDescriptions
+  };
+}
+
+export async function getSchoolReportsData(
+  schoolId: string,
+  studentsInSchool: any[],
+  workloadsInSchool: any[]
+): Promise<{
+  bimonthlyGrades: any[];
+  extraGrades: any[];
+  attendance: any[];
+  lessons: any[];
+  assignmentDescriptions: any[];
+}> {
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) {
+    return { bimonthlyGrades: [], extraGrades: [], attendance: [], lessons: [], assignmentDescriptions: [] };
+  }
+
+  // Find all unique teacher usernames teaching in this school
+  const teacherUsernames = Array.from(new Set(
+    workloadsInSchool
+      .map(w => w.teacherUsername?.toLowerCase())
+      .filter((u): u is string => !!u)
+  ));
+
+  const bimonthlyGrades: any[] = [];
+  const extraGrades: any[] = [];
+  const attendance: any[] = [];
+  const lessons: any[] = [];
+  const assignmentDescriptions: any[] = [];
+
+  const studentIdsSet = new Set(studentsInSchool.map(s => String(s.id)));
+  const classIdsSet = new Set(workloadsInSchool.map(w => String(w.classId)));
+
+  // Fetch the data for all teachers in parallel
+  await Promise.all(teacherUsernames.map(async (username) => {
+    try {
+      // 1. bimonthlyGrades
+      const gradesRef = collection(dbInstance, `diaries/${username}/bimonthlyGrades`);
+      const gradesSnapshot = await withTimeout(getDocs(gradesRef), 5000);
+      gradesSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          bimonthlyGrades.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 2. extraGrades
+      const extraRef = collection(dbInstance, `diaries/${username}/extraGrades`);
+      const extraSnapshot = await withTimeout(getDocs(extraRef), 5000);
+      extraSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          extraGrades.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 3. attendance
+      const attRef = collection(dbInstance, `diaries/${username}/attendance`);
+      const attSnapshot = await withTimeout(getDocs(attRef), 5000);
+      attSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (studentIdsSet.has(String(data.studentId))) {
+          attendance.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 4. lessons
+      const lessonsRef = collection(dbInstance, `diaries/${username}/lessons`);
+      const lessonsSnapshot = await withTimeout(getDocs(lessonsRef), 5000);
+      lessonsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (classIdsSet.has(String(data.classId))) {
+          lessons.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+      // 5. assignmentDescriptions
+      const descRef = collection(dbInstance, `diaries/${username}/assignmentDescriptions`);
+      const descSnapshot = await withTimeout(getDocs(descRef), 5000);
+      descSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (classIdsSet.has(String(data.classId))) {
+          assignmentDescriptions.push({ id: doc.id, teacherUsername: username, ...data });
+        }
+      });
+
+    } catch (err) {
+      console.error(`Error loading school report data for teacher ${username}:`, err);
+    }
+  }));
+
+  return {
+    bimonthlyGrades,
+    extraGrades,
+    attendance,
+    lessons,
+    assignmentDescriptions
+  };
+}
+
+
 
 

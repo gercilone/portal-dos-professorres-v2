@@ -11,9 +11,11 @@ import TabFSettings from './components/TabF_Settings';
 import CoordGlobalClasses from './components/CoordGlobalClasses';
 import CoordGlobalSubjects from './components/CoordGlobalSubjects';
 import CoordBackups from './components/CoordBackups';
+import CoordGradesControl from './components/CoordGradesControl';
+import CoordClassReports from './components/CoordClassReports';
 import { sortClasses } from './types';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from './utils/deduplicate';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud, BarChart2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   deleteProfessorFromCloud,
@@ -30,6 +32,8 @@ import {
   getGlobalStudents,
   getGlobalSubjects,
   getGlobalWorkloads,
+  getGlobalGradesControl,
+  saveGlobalGradesControl,
   pushGlobalDataToCloud,
   testFirestoreConnection,
   forceEnableNetworkAndTest
@@ -264,12 +268,13 @@ export default function App() {
 
       // 2. Fetch all list data from cloud
       setCoordFeedbackMsg('Buscando dados mais recentes da nuvem...');
-      const [schs, cls, stds, subs, wls] = await Promise.all([
+      const [schs, cls, stds, subs, wls, gcs] = await Promise.all([
         getGlobalSchools(),
         getGlobalClasses(),
         getGlobalStudents(),
         getGlobalSubjects(),
-        getGlobalWorkloads()
+        getGlobalWorkloads(),
+        getGlobalGradesControl()
       ]);
 
       // 3. Save to localStorage cache so they are 100% locally available in all tabs
@@ -278,6 +283,7 @@ export default function App() {
       localStorage.setItem('portal_global_students', JSON.stringify(stds));
       localStorage.setItem('portal_global_subjects', JSON.stringify(subs));
       localStorage.setItem('portal_global_workloads', JSON.stringify(wls));
+      localStorage.setItem('portal_global_grades_control', JSON.stringify(gcs));
 
       // 4. Also sync profiles
       await syncCoordinatorsListInCloud();
@@ -331,7 +337,7 @@ export default function App() {
   });
 
   // Coordinator dashboard states
-  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects' | 'backups'>('inspect');
+  const [coordActiveTab, setCoordActiveTab] = useState<'inspect' | 'accounts' | 'global-classes' | 'global-subjects' | 'backups' | 'grades-control' | 'class-reports'>('inspect');
   const [searchTeacherQuery, setSearchTeacherQuery] = useState('');
   
   // Coordinator Account creation form
@@ -1757,15 +1763,40 @@ export default function App() {
         )}
 
         {/* Dashboard Navigation Tabs */}
-        <div className="bg-zinc-900/40 border-b border-zinc-800/50">
-          <div className="max-w-7xl mx-auto px-4 flex items-center gap-2">
+        <div className="bg-zinc-900/40 border-b border-zinc-800/50 py-3">
+          <div className="max-w-7xl mx-auto px-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
             <button
               onClick={() => setCoordActiveTab('inspect')}
-              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
-                coordActiveTab === 'inspect' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'inspect'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
-              <Users className="w-4 h-4" /> Inspeção de Diários
+              <Users className="w-4 h-4 shrink-0" />
+              <span className="text-center">Inspeção de Diários</span>
+            </button>
+            <button
+              onClick={() => setCoordActiveTab('grades-control')}
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'grades-control'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+              }`}
+            >
+              <CheckSquare className="w-4 h-4 shrink-0" />
+              <span className="text-center">Controle de Notas</span>
+            </button>
+            <button
+              onClick={() => setCoordActiveTab('class-reports')}
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'class-reports'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
+              }`}
+            >
+              <BarChart2 className="w-4 h-4 shrink-0" />
+              <span className="text-center">Controle de Turmas</span>
             </button>
             <button
               onClick={() => {
@@ -1773,35 +1804,47 @@ export default function App() {
                 setAccSuccessMessage('');
                 setAccErrorMessage('');
               }}
-              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
-                coordActiveTab === 'accounts' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'accounts'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
-              <UserPlus className="w-4 h-4" /> Gerenciar Contas
+              <UserPlus className="w-4 h-4 shrink-0" />
+              <span className="text-center">Gerenciador de Contas</span>
             </button>
             <button
               onClick={() => setCoordActiveTab('global-classes')}
-              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
-                coordActiveTab === 'global-classes' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'global-classes'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
-              <School className="w-4 h-4" /> Turmas & Alunos Globais
+              <School className="w-4 h-4 shrink-0" />
+              <span className="text-center">Turmas & Alunos Globais</span>
             </button>
             <button
               onClick={() => setCoordActiveTab('global-subjects')}
-              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
-                coordActiveTab === 'global-subjects' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'global-subjects'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
-              <BookOpen className="w-4 h-4" /> Disciplinas & Cargas Globais
+              <BookOpen className="w-4 h-4 shrink-0" />
+              <span className="text-center">Disciplinas & Cargos Globais</span>
             </button>
             <button
               onClick={() => setCoordActiveTab('backups')}
-              className={`px-4 py-3 font-bold text-xs border-b-2 transition flex items-center gap-2 cursor-pointer ${
-                coordActiveTab === 'backups' ? 'border-amber-500 text-amber-400 bg-amber-500/5' : 'border-transparent text-zinc-400 hover:text-zinc-300'
+              className={`px-3 py-2.5 font-bold text-xs rounded-xl border transition flex items-center justify-center gap-2 cursor-pointer ${
+                coordActiveTab === 'backups'
+                  ? 'border-amber-500 bg-amber-500/10 text-amber-400 shadow-md shadow-amber-500/5'
+                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
             >
-              <Archive className="w-4 h-4" /> Backups do Sistema
+              <Archive className="w-4 h-4 shrink-0" />
+              <span className="text-center">Backup do Sistema</span>
             </button>
           </div>
         </div>
@@ -1818,6 +1861,14 @@ export default function App() {
 
           {coordActiveTab === 'backups' && (
             <CoordBackups />
+          )}
+
+          {coordActiveTab === 'grades-control' && (
+            <CoordGradesControl />
+          )}
+
+          {coordActiveTab === 'class-reports' && (
+            <CoordClassReports />
           )}
 
           {coordActiveTab === 'inspect' && (
