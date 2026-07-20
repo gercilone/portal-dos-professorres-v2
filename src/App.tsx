@@ -1185,7 +1185,9 @@ export default function App() {
               }
               
               setIsInitialSyncing(false);
-              window.location.reload();
+              if (pullSuccess) {
+                window.location.reload();
+              }
             }
           } catch (err) {
             console.error('Error during startup sync:', err);
