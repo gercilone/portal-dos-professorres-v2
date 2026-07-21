@@ -116,6 +116,13 @@ export function getAuthReadyPromise(): Promise<void> {
   if (authReadyPromise) return authReadyPromise;
 
   try {
+    // Ensure Firebase is initialized and getFirestoreInstance has been called
+    const db = getFirestoreInstance();
+    if (!db) {
+      authReadyPromise = Promise.resolve();
+      return authReadyPromise;
+    }
+
     const auth = getAuth();
     authReadyPromise = new Promise<void>((resolve) => {
       if (auth.currentUser) {
@@ -138,7 +145,8 @@ export function getAuthReadyPromise(): Promise<void> {
     });
   } catch (err) {
     console.warn('Could not initialize authReadyPromise:', err);
-    authReadyPromise = Promise.resolve();
+    // Don't cache a broken promise so we can attempt initialization again
+    return Promise.resolve();
   }
 
   return authReadyPromise;

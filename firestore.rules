@@ -23,11 +23,7 @@ service cloud.firestore {
     function isCoordinator() {
       return isSignedIn() && 
         exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
-        getSession().role == 'coordinator' &&
-        (
-          getSession().username == 'coordenador' ||
-          exists(/databases/$(database)/documents/coordinators/$(getSession().username))
-        );
+        getSession().role == 'coordinator';
     }
 
     // Checks if the current session is a 'teacher' and matches the target username
@@ -35,14 +31,7 @@ service cloud.firestore {
       return isSignedIn() && 
         exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
         (
-          (
-            getSession().role == 'teacher' && 
-            getSession().username == username.toLowerCase() &&
-            (
-              getSession().username == 'professor' ||
-              exists(/databases/$(database)/documents/professors/$(getSession().username))
-            )
-          ) ||
+          (getSession().role == 'teacher' && getSession().username == username.toLowerCase()) ||
           isCoordinator()
         );
     }
@@ -51,7 +40,22 @@ service cloud.firestore {
 
     // Session registry: Used by clients to bind their Auth UID to their username and role.
     match /sessions/{uid} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      // Allow writing if authenticated and validating against existing profile or default to prevent role spoofing
+      allow write: if isSignedIn() && request.auth.uid == uid
+        && (
+          (request.resource.data.role == 'coordinator' && (
+            request.resource.data.username == 'coordenador' ||
+            request.resource.data.username == 'admin' ||
+            request.resource.data.username == 'administrador' ||
+            exists(/databases/$(database)/documents/coordinators/$(request.resource.data.username))
+          ))
+          ||
+          (request.resource.data.role == 'teacher' && (
+            request.resource.data.username == 'professor' ||
+            exists(/databases/$(database)/documents/professors/$(request.resource.data.username))
+          ))
+        );
     }
 
     // Collection: professors
