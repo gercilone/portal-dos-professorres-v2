@@ -103,16 +103,97 @@ export default function CoordStudentReports() {
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   }, [classes, selectedSchoolId]);
 
-  // Auto-select class when school changes
-  useEffect(() => {
-    if (filteredClasses.length > 0) {
-      if (!filteredClasses.some(c => c.id === selectedClassId)) {
-        setSelectedClassId(filteredClasses[0].id);
+  const [selectedAno, setSelectedAno] = useState<string>('');
+  const [selectedTurma, setSelectedTurma] = useState<string>('');
+
+  // Helper to parse class name into "Ano" and "Turma"
+  const parseClass = (className: string) => {
+    const normalized = className.trim();
+    const anoMatch = normalized.match(/(\d+º?\s*(?:Ano|ano|série|serie))/i) || normalized.match(/(\d+\s*º?\s*(?:Ano|ano))/i);
+    let ano = '';
+    if (anoMatch) {
+      ano = anoMatch[0].toUpperCase();
+    } else {
+      const firstPart = normalized.split('-')[0].trim();
+      const words = firstPart.split(' ');
+      ano = words.slice(0, 2).join(' ').toUpperCase();
+    }
+
+    const letterMatch = normalized.match(/\b([A-Z])\b/i);
+    let letter = 'ÚNICA';
+    if (letterMatch) {
+      letter = letterMatch[1].toUpperCase();
+    }
+
+    return { ano, letter };
+  };
+
+  // Extract unique series/Anos for the selected school
+  const uniqueAnos = useMemo(() => {
+    const anosSet = new Set<string>();
+    filteredClasses.forEach(c => {
+      const { ano } = parseClass(c.name);
+      if (ano) anosSet.add(ano);
+    });
+    return Array.from(anosSet).sort((a, b) => {
+      const numA = parseInt(a) || 0;
+      const numB = parseInt(b) || 0;
+      return numA - numB;
+    });
+  }, [filteredClasses]);
+
+  // Extract unique Turmas for the selected school and selected Ano
+  const uniqueTurmas = useMemo(() => {
+    const turmasSet = new Set<string>();
+    filteredClasses.forEach(c => {
+      const { ano, letter } = parseClass(c.name);
+      if (ano === selectedAno && letter) {
+        turmasSet.add(letter);
       }
+    });
+    return Array.from(turmasSet).sort();
+  }, [filteredClasses, selectedAno]);
+
+  // Sync / Auto-select defaults
+  useEffect(() => {
+    if (uniqueAnos.length > 0) {
+      if (!selectedAno || !uniqueAnos.includes(selectedAno)) {
+        setSelectedAno(uniqueAnos[0]);
+      }
+    } else {
+      setSelectedAno('');
+    }
+  }, [uniqueAnos, selectedAno]);
+
+  useEffect(() => {
+    if (uniqueTurmas.length > 0) {
+      if (!selectedTurma || !uniqueTurmas.includes(selectedTurma)) {
+        setSelectedTurma(uniqueTurmas[0]);
+      }
+    } else {
+      setSelectedTurma('');
+    }
+  }, [uniqueTurmas, selectedTurma]);
+
+  // Find active class matching selection
+  const activeClass = useMemo(() => {
+    return filteredClasses.find(c => {
+      const { ano, letter } = parseClass(c.name);
+      return ano === selectedAno && letter === selectedTurma;
+    }) || filteredClasses.find(c => {
+      const { ano } = parseClass(c.name);
+      return ano === selectedAno;
+    });
+  }, [filteredClasses, selectedAno, selectedTurma]);
+
+  // Set the actual selectedClassId
+  useEffect(() => {
+    if (activeClass) {
+      setSelectedClassId(activeClass.id);
     } else {
       setSelectedClassId('');
     }
-  }, [selectedSchoolId, filteredClasses]);
+  }, [activeClass]);
 
   // Filter students for selected class and search query
   const filteredStudents = useMemo(() => {
@@ -326,49 +407,108 @@ export default function CoordStudentReports() {
             transition={{ duration: 0.2 }}
             className="space-y-6"
           >
-            {/* Filters row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* School select */}
-              <div className="bg-zinc-900 border border-zinc-850 p-4 rounded-2xl space-y-1.5">
-                <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Escola</label>
-                <select
-                  disabled={!!getActiveCoordinatorSchoolId()}
-                  value={selectedSchoolId}
-                  onChange={(e) => setSelectedSchoolId(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2.5 w-full focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
-                >
-                  {schools.map(sch => (
-                    <option key={sch.id} value={sch.id}>{sch.name}</option>
-                  ))}
-                </select>
+            {/* Selection Panel with Buttons */}
+            <div className="bg-zinc-900 border border-zinc-850 p-6 rounded-2xl space-y-6">
+              {/* Escola Selector */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-black tracking-wider text-zinc-500 uppercase block">Escola:</span>
+                <div className="flex flex-wrap gap-2">
+                  {schools.map(sch => {
+                    const isSelected = selectedSchoolId === sch.id;
+                    const isDisabled = !!getActiveCoordinatorSchoolId() && getActiveCoordinatorSchoolId() !== sch.id;
+                    return (
+                      <button
+                        type="button"
+                        key={sch.id}
+                        disabled={isDisabled}
+                        onClick={() => {
+                          setSelectedSchoolId(sch.id);
+                        }}
+                        className={`px-4 py-2.5 text-xs font-bold rounded-xl border transition-all duration-200 cursor-pointer select-none ${
+                          isSelected
+                            ? 'bg-amber-600/15 border-amber-500 text-amber-400 shadow-md shadow-amber-500/5 font-extrabold'
+                            : isDisabled
+                              ? 'opacity-45 bg-zinc-950 border-zinc-900 text-zinc-650 cursor-not-allowed'
+                              : 'bg-zinc-950 border-zinc-850 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 hover:bg-zinc-900/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <SchoolIcon className="w-3.5 h-3.5 animate-pulse" />
+                          <span>{sch.name}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Class select */}
-              <div className="bg-zinc-900 border border-zinc-850 p-4 rounded-2xl space-y-1.5">
-                <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Turma</label>
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl px-3 py-2.5 w-full focus:outline-none focus:ring-1 focus:ring-amber-500 font-bold"
-                >
-                  <option value="">Selecione uma turma...</option>
-                  {filteredClasses.map(cls => (
-                    <option key={cls.id} value={cls.id}>{cls.name}</option>
-                  ))}
-                </select>
+              {/* Série / Ano Selector */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-black tracking-wider text-zinc-500 uppercase block">Série / Ano:</span>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueAnos.length === 0 ? (
+                    <p className="text-xs text-zinc-500 italic py-1">Nenhuma série ou ano identificado nesta escola.</p>
+                  ) : (
+                    uniqueAnos.map(ano => {
+                      const isSelected = selectedAno === ano;
+                      return (
+                        <button
+                          type="button"
+                          key={ano}
+                          onClick={() => setSelectedAno(ano)}
+                          className={`px-4 py-2.5 text-xs font-black rounded-xl border transition-all duration-200 cursor-pointer select-none ${
+                            isSelected
+                              ? 'bg-amber-500 text-zinc-950 border-amber-400 shadow-lg shadow-amber-500/10'
+                              : 'bg-zinc-950 border-zinc-850 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 hover:bg-zinc-900/50'
+                          }`}
+                        >
+                          {ano}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               </div>
 
-              {/* Search filter */}
-              <div className="bg-zinc-900 border border-zinc-850 p-4 rounded-2xl space-y-1.5">
-                <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider block">Buscar Aluno</label>
-                <div className="relative">
+              {/* Turma Selector */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-black tracking-wider text-zinc-500 uppercase block">Turmas Cadastradas:</span>
+                <div className="flex flex-wrap gap-2">
+                  {uniqueTurmas.length === 0 ? (
+                    <p className="text-xs text-zinc-500 italic py-1">Selecione uma série para listar as turmas.</p>
+                  ) : (
+                    uniqueTurmas.map(turma => {
+                      const isSelected = selectedTurma === turma;
+                      return (
+                        <button
+                          type="button"
+                          key={turma}
+                          onClick={() => setSelectedTurma(turma)}
+                          className={`min-w-12 px-5 py-2.5 text-xs font-black rounded-xl border transition-all duration-200 cursor-pointer select-none text-center ${
+                            isSelected
+                              ? 'bg-amber-500 text-zinc-950 border-amber-400 shadow-lg shadow-amber-500/10'
+                              : 'bg-zinc-950 border-zinc-850 text-zinc-400 hover:border-zinc-700 hover:text-zinc-300 hover:bg-zinc-900/50'
+                          }`}
+                        >
+                          {turma}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Search Filter input */}
+              <div className="border-t border-zinc-850 pt-4 space-y-1.5">
+                <label className="text-[11px] text-zinc-500 font-black uppercase tracking-wider block">Buscar Aluno nesta Turma:</label>
+                <div className="relative max-w-md">
                   <Search className="w-4 h-4 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    placeholder="Nome do aluno..."
+                    placeholder="Nome ou parte do nome do estudante..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="bg-zinc-950 border border-zinc-800 text-zinc-300 text-xs rounded-xl pl-9 pr-4 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none"
+                    className="bg-zinc-950 border border-zinc-850 text-zinc-300 text-xs rounded-xl pl-9 pr-4 py-2.5 w-full focus:ring-1 focus:ring-amber-500 focus:outline-none placeholder-zinc-650"
                   />
                 </div>
               </div>
