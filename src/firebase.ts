@@ -83,6 +83,8 @@ export async function registerActiveSession() {
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return;
 
+  logDetailedFirebaseDebug('registerActiveSession - Iniciando registro de sessão ativa');
+
   try {
     const auth = getAuth();
     if (auth.currentUser) {
@@ -103,10 +105,16 @@ export async function registerActiveSession() {
           timestamp: new Date().toISOString()
         });
         console.log(`[Firebase Session] Session registered successfully for UID ${uid}: ${activeUser} (${role})`);
+        logDetailedFirebaseDebug(`registerActiveSession - Sessão registrada com sucesso para UID: ${uid}, Usuário: ${activeUser}, Cargo: ${role}`);
+      } else {
+        logDetailedFirebaseDebug('registerActiveSession - Usuário ativo ou Cargo não definidos no LocalStorage. Registro de sessão pulado.');
       }
+    } else {
+      logDetailedFirebaseDebug('registerActiveSession - Nenhum usuário autenticado no Firebase Auth atualmente.');
     }
   } catch (err) {
     console.warn('[Firebase Session] Could not register active session:', err);
+    logDetailedFirebaseDebug('registerActiveSession - Falha ao registrar sessão ativa', err);
   }
 }
 
@@ -237,38 +245,51 @@ export function isCloudFallback(): boolean {
 
 // Test connectivity to Firestore directly bypassing cache
 export async function testFirestoreConnection(): Promise<{ success: boolean; error?: any }> {
+  logDetailedFirebaseDebug('testFirestoreConnection - Iniciando teste de conectividade com o Firestore');
   try {
     await ensureAuthAndSession();
   } catch (authErr) {
     console.warn("Auth/Session prep failed during connection test:", authErr);
+    logDetailedFirebaseDebug('testFirestoreConnection - Falha ao assegurar Auth/Sessão', authErr);
   }
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
-    return { success: false, error: new Error("Instância do Firestore não pôde ser inicializada.") };
+    const err = new Error("Instância do Firestore não pôde ser inicializada.");
+    logDetailedFirebaseDebug('testFirestoreConnection - Instância nula', err);
+    return { success: false, error: err };
   }
   try {
     const testDocRef = doc(dbInstance, 'coordinators', '_connectivity_test_');
+    logDetailedFirebaseDebug('testFirestoreConnection - Buscando documento de teste: coordinators/_connectivity_test_');
     await withTimeout(getDocFromServer(testDocRef), 4000);
+    logDetailedFirebaseDebug('testFirestoreConnection - SUCESSO! Conectividade confirmada.');
     return { success: true };
   } catch (err: any) {
+    logDetailedFirebaseDebug('testFirestoreConnection - FALHA no teste de conexão com o servidor do Firestore', err);
     return { success: false, error: err };
   }
 }
 
 // Force network re-enable and test connection
 export async function forceEnableNetworkAndTest(): Promise<{ success: boolean; error?: any }> {
+  logDetailedFirebaseDebug('forceEnableNetworkAndTest - Forçando habilitação de rede');
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
-    return { success: false, error: new Error("Instância do Firestore não pôde ser inicializada.") };
+    const err = new Error("Instância do Firestore não pôde ser inicializada.");
+    logDetailedFirebaseDebug('forceEnableNetworkAndTest - Instância nula', err);
+    return { success: false, error: err };
   }
   try {
     try {
       await enableNetwork(dbInstance);
+      logDetailedFirebaseDebug('forceEnableNetworkAndTest - enableNetwork concluído');
     } catch (netErr) {
       console.warn("Could not explicitly enableNetwork, trying standard check:", netErr);
+      logDetailedFirebaseDebug('forceEnableNetworkAndTest - falha ao habilitar explicitamente a rede', netErr);
     }
     return await testFirestoreConnection();
   } catch (err: any) {
+    logDetailedFirebaseDebug('forceEnableNetworkAndTest - FALHA ao tentar reconectar e testar', err);
     return { success: false, error: err };
   }
 }
@@ -303,9 +324,54 @@ export function handleFirestoreError(error: any) {
   }
 }
 
+// Helper to print extremely detailed console logs for Firestore operations and Auth credentials
+export function logDetailedFirebaseDebug(action: string, error?: any) {
+  try {
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    const activeUser = localStorage.getItem('portal_active_user');
+    const userRole = localStorage.getItem('portal_user_role');
+    const isInspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
+    const isFallback = localStorage.getItem('portal_cloud_fallback') === 'true';
+
+    console.groupCollapsed(`%c[FIRESTORE DEBUG] ${action}`, error ? "color: #ef4444; font-weight: bold; font-size: 11px;" : "color: #3b82f6; font-weight: bold; font-size: 11px;");
+    console.log("%c--- Estado do Usuário (Local) ---", "font-weight: bold; color: #f59e0b;");
+    console.log("Usuário Ativo (LocalStorage):", activeUser);
+    console.log("Cargo/Role (LocalStorage):", userRole);
+    console.log("Modo de Inspeção de Coordenador:", isInspecting);
+    console.log("Contingência Offline Ativa:", isFallback);
+
+    console.log("%c--- Autenticação Firebase (Nuvem) ---", "font-weight: bold; color: #10b981;");
+    if (currentUser) {
+      console.log("UID Autenticado no Firebase Auth:", currentUser.uid);
+      console.log("É Conta de Login Anônimo:", currentUser.isAnonymous);
+      console.log("Dados de Provedor (ProviderData):", currentUser.providerData);
+    } else {
+      console.log("Nenhum usuário autenticado no Firebase Auth atualmente.");
+    }
+
+    if (error) {
+      console.log("%c--- Detalhes Técnicos do Erro ---", "font-weight: bold; color: #ef4444;");
+      console.log("Mensagem Amigável:", error.message || error);
+      console.log("Código de Erro do Firebase:", error.code || "Sem código específico");
+      console.log("Objeto de Erro Completo:", error);
+      if (error.stack) {
+        console.log("Pilha de Chamada (Stack Trace):\n", error.stack);
+      }
+    }
+    console.groupEnd();
+  } catch (e) {
+    console.warn("Falha interna ao gerar logs de depuração do Firebase:", e);
+  }
+}
+
 // Helper to log Firestore errors without spamming standard console.error if they are expected connection/offline/quota issues
 export function logFirebaseError(message: string, error: any) {
   if (!error) return;
+
+  // Log extremely comprehensive diagnostics to the browser console
+  logDetailedFirebaseDebug(`FALHA: ${message}`, error);
+
   const errMsg = String(error?.message || error || '').toLowerCase();
   const errCode = String(error?.code || '').toLowerCase();
   const isConnectionOrQuota = 

@@ -41,9 +41,12 @@ service cloud.firestore {
     // Session registry: Used by clients to bind their Auth UID to their username and role.
     match /sessions/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      // Allow writing if authenticated and validating against existing profile or default to prevent role spoofing
+      // Allow writing if authenticated and validating against existing profile or default to prevent role spoofing.
+      // Also allow writing on empty/unseeded databases to bootstrap.
       allow write: if isSignedIn() && request.auth.uid == uid
         && (
+          !exists(/databases/$(database)/documents/coordinators/coordenador)
+          ||
           (request.resource.data.role == 'coordinator' && (
             request.resource.data.username == 'coordenador' ||
             request.resource.data.username == 'admin' ||
@@ -60,18 +63,18 @@ service cloud.firestore {
 
     // Collection: professors
     // Allowed: Readable by any signed-in user (needed on mount to check credentials and load login lists).
-    // Writable: Only by coordinators/admins (or the professor themselves editing their own profile).
+    // Writable: Only by coordinators/admins (or the professor themselves editing their own profile), or bootstrapping.
     match /professors/{username} {
       allow read: if isSignedIn();
-      allow write: if isCoordinator() || isProfessor(username);
+      allow write: if isCoordinator() || isProfessor(username) || !exists(/databases/$(database)/documents/coordinators/coordenador);
     }
 
     // Collection: coordinators
     // Allowed: Readable by any signed-in user (needed on mount to load settings/coordinators list).
-    // Writable: Only by coordinators.
+    // Writable: Only by coordinators, or bootstrapping.
     match /coordinators/{username} {
       allow read: if isSignedIn();
-      allow write: if isCoordinator();
+      allow write: if isCoordinator() || !exists(/databases/$(database)/documents/coordinators/coordenador);
     }
 
     // Collection: diaries (school diaries, grades, seen records, lessons, attendance)
