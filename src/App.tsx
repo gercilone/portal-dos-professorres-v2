@@ -176,6 +176,18 @@ export default function App() {
       setIsCloudFallbackActive(localStorage.getItem('portal_cloud_fallback') === 'true');
     };
     window.addEventListener('storage', handleStorageChange);
+
+    // Auto-verify cloud connection on startup to recover from stale offline mode
+    if (localStorage.getItem('portal_cloud_fallback') === 'true') {
+      testFirestoreConnection().then((res) => {
+        if (res.success) {
+          localStorage.setItem('portal_cloud_fallback', 'false');
+          setIsCloudFallbackActive(false);
+          window.dispatchEvent(new Event('storage'));
+        }
+      });
+    }
+
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 

@@ -200,33 +200,7 @@ export function getFirestoreInstance() {
       if (!auth.currentUser) {
         signInAnonymously(auth)
           .catch((authErr: any) => {
-            console.warn('[Firebase Auth] Silent anonymous authentication failed:', authErr);
-            const errMsg = String(authErr?.message || authErr || '').toLowerCase();
-            const errCode = String(authErr?.code || '').toLowerCase();
-            if (
-              errMsg.includes('operation_not_allowed') ||
-              errMsg.includes('admin_only_operation') ||
-              errCode.includes('operation-not-allowed') ||
-              errCode.includes('admin-only-operation')
-            ) {
-              console.error(
-                '%c[PORTAL DO PROFESSOR - ERRO CRÍTICO DE CONFIGURAÇÃO]%c\n' +
-                'O provedor de "Login Anônimo" (Anonymous Sign-In) está DESATIVADO no Firebase Auth do seu projeto!\n\n' +
-                'Para resolver todos os erros de conexão com o banco de dados de forma definitiva, siga estes passos simples:\n' +
-                '1. Acesse o Console do Firebase: https://console.firebase.google.com/\n' +
-                '2. Clique no seu projeto ("gen-lang-client-...").\n' +
-                '3. No menu lateral esquerdo, sob a seção "Build", clique em "Authentication".\n' +
-                '4. Entre na aba "Sign-in method" (Método de login).\n' +
-                '5. Clique em "Adicionar novo provedor" e ative o provedor "Anônimo" (Anonymous).\n' +
-                '6. Salve a alteração e atualize a página do portal.\n\n' +
-                'Enquanto isso não for ativado, o sistema funcionará no modo offline seguro e salvará todos os dados localmente de forma impecável para que nenhum trabalho seja perdido!',
-                'background: #ef4444; color: white; font-weight: bold; padding: 6px 12px; border-radius: 6px; font-size: 13px;',
-                'color: #ef4444; font-weight: bold; font-size: 12px; line-height: 1.5;'
-              );
-              // Proactively activate offline fallback when anonymous sign-in is disabled to guarantee zero-error experience
-              localStorage.setItem('portal_cloud_fallback', 'true');
-              window.dispatchEvent(new Event('storage'));
-            }
+            console.warn('[Firebase Auth] Silent anonymous authentication notice:', authErr);
           });
       }
     } catch (authInitErr) {
@@ -332,25 +306,9 @@ export function handleFirestoreError(error: any) {
     errMsg.includes('quota') ||
     errMsg.includes('resource-exhausted') ||
     errCode.includes('resource-exhausted') ||
-    errMsg.includes('exceeded') ||
-    errMsg.includes('quota limit exceeded') ||
-    errMsg.includes('timeout') ||
-    errMsg.includes('time out') ||
-    errMsg.includes('unavailable') ||
-    errMsg.includes('could not reach') ||
-    errMsg.includes('connection failed') ||
-    errMsg.includes('failed to connect') ||
-    errMsg.includes('offline') ||
-    errMsg.includes('unexpected state') ||
-    errMsg.includes('assertion failed') ||
-    errMsg.includes('ca9') ||
-    errMsg.includes('b815') ||
-    errCode.includes('unavailable') ||
-    errCode.includes('permission-denied') ||
-    errMsg.includes('permission') ||
-    errMsg.includes('insufficient permissions')
+    errMsg.includes('quota limit exceeded')
   ) {
-    console.warn('Firestore offline/connection/permission or quota issue detected. Activating offline contingency mode.');
+    console.warn('Firestore quota issue detected. Activating offline contingency mode.');
     localStorage.setItem('portal_cloud_fallback', 'true');
     window.dispatchEvent(new Event('storage'));
   }
