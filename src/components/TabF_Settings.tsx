@@ -3005,7 +3005,7 @@ export default function TabFSettings({
             
             <div className="bg-sky-950/30 border border-sky-900/50 p-4 rounded-xl space-y-3">
               <p className="text-[11px] text-sky-300 leading-relaxed">
-                O planejamento anual de cargas horárias (total de aulas para cada matéria e série) é definido exclusivamente pela coordenação. 
+                O planejamento semestral de cargas horárias (total de aulas por semestre para cada matéria e série) é definido exclusivamente pela coordenação. 
                 Sincronize com a nuvem para vincular automaticamente as cargas horárias corretas às suas turmas locais.
               </p>
               <button
@@ -3043,7 +3043,7 @@ export default function TabFSettings({
                           <span className="text-[10px] text-zinc-500 block">Série/Turma: {c?.name || '-'}</span>
                         </div>
                         <span className="font-mono font-bold bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-full text-sky-400 text-[10px] shrink-0">
-                          {wl.totalLessons} aulas/ano
+                          {wl.totalLessons} aulas/semestre
                         </span>
                       </div>
                     );
