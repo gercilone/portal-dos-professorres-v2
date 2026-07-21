@@ -377,7 +377,6 @@ export default function App() {
       setTimeout(() => {
         setSaveCoordSuccess(null);
         setCoordFeedbackMsg('');
-        window.location.reload();
       }, 3000);
 
     } catch (err) {
@@ -623,6 +622,8 @@ export default function App() {
         } else {
           sessionStorage.setItem('portal_is_authenticated', 'true');
         }
+        localStorage.setItem('portal_coord_initial_sync_done', 'true');
+        sessionStorage.setItem('portal_coord_session_sync_pulled', 'true');
         setIsAuthenticated(true);
         setUserRole('coordinator');
         setLoginError('');
@@ -631,7 +632,7 @@ export default function App() {
         } catch (sessionErr) {
           console.warn('Session write error during login:', sessionErr);
         }
-        window.location.reload();
+        window.dispatchEvent(new Event('storage'));
         return;
       } else {
         setLoginError('Senha incorreta.');
@@ -663,7 +664,7 @@ export default function App() {
         } else {
           sessionStorage.setItem('portal_is_authenticated', 'true');
         }
-        localStorage.setItem('portal_force_cloud_pull', 'true');
+        localStorage.removeItem('portal_force_cloud_pull');
 
         // UNCONDITIONAL DATABASE RESTORE DURING LOGIN
         try {
@@ -721,7 +722,7 @@ export default function App() {
         } catch (sessionErr) {
           console.warn('Session write error during login:', sessionErr);
         }
-        window.location.reload();
+        window.dispatchEvent(new Event('storage'));
       } else {
         setLoginError('Senha incorreta. Tente novamente.');
       }
@@ -1234,10 +1235,10 @@ export default function App() {
             const initialSyncDone = localStorage.getItem('portal_initial_sync_done') === 'true';
             const sessionSyncPulled = sessionStorage.getItem('portal_session_sync_pulled') === 'true';
             
-            // Auto-pull on startup if we are inspecting, if the local DB has no data, or if we haven't synced yet in this session
+            // Auto-pull on startup if we are inspecting, or if we haven't synced yet in this session
             const shouldPull = inspecting 
               ? needsInspectPull 
-              : (schoolCount === 0 || !initialSyncDone || forcePull || !sessionSyncPulled);
+              : (forcePull || (!sessionSyncPulled && !initialSyncDone));
 
             if (shouldPull) {
               setIsInitialSyncing(true);
@@ -1273,9 +1274,7 @@ export default function App() {
               }
               
               setIsInitialSyncing(false);
-              if (pullSuccess) {
-                window.location.reload();
-              }
+              window.dispatchEvent(new Event('storage'));
             }
           } catch (err) {
             console.error('Error during startup sync:', err);
@@ -1331,8 +1330,7 @@ export default function App() {
                 localStorage.removeItem('portal_force_cloud_pull');
               }
               setIsInitialSyncing(false);
-              // Force reload to let all sub-components see the freshly cached global datasets in localStorage
-              window.location.reload();
+              window.dispatchEvent(new Event('storage'));
             } else {
               // Silently sync in background to keep data fresh
               syncCoordinatorsListInCloud().catch(() => {});
