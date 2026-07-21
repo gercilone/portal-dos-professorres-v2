@@ -102,7 +102,7 @@ service cloud.firestore {
     // Allowed: Readable by any signed-in user (needed on mount to load settings/coordinators list).
     // Writable: Only by coordinators with non-empty schoolId (or bootstrapping).
     match /coordinators/{username} {
-      allow read: if username == '_connectivity_test_' || isSignedIn();
+      allow read: if isSignedIn();
       allow create, update: if (
         isCoordinator()
       ) || (
