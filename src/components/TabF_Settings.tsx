@@ -1,10 +1,10 @@
-import { useState, FormEvent, ChangeEvent } from 'react';
+import { useState, FormEvent, ChangeEvent, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/deduplicate';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
-import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads } from '../firebase';
+import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads, syncProfessorsListInCloud } from '../firebase';
 
 export function getSchoolColorClasses(schoolId: number | undefined) {
   if (!schoolId) {
@@ -199,6 +199,8 @@ export default function TabFSettings({
   const [globalSchools, setGlobalSchools] = useState<any[]>([]);
   const [globalClasses, setGlobalClasses] = useState<any[]>([]);
   const [globalStudents, setGlobalStudents] = useState<any[]>([]);
+  const [globalWorkloads, setGlobalWorkloads] = useState<any[]>([]);
+  const [professorsList, setProfessorsList] = useState<any[]>([]);
   const [loadingGlobals, setLoadingGlobals] = useState(false);
   const [selectedGlobalSchoolId, setSelectedGlobalSchoolId] = useState('');
   const [attachingClassId, setAttachingClassId] = useState<string | null>(null);
@@ -322,14 +324,34 @@ export default function TabFSettings({
   const loadGlobalData = async () => {
     setLoadingGlobals(true);
     try {
-      const schs = await getGlobalSchools();
-      const cls = await getGlobalClasses();
-      const stds = await getGlobalStudents();
+      const [schs, cls, stds, wls, profs] = await Promise.all([
+        getGlobalSchools(),
+        getGlobalClasses(),
+        getGlobalStudents(),
+        getGlobalWorkloads(),
+        syncProfessorsListInCloud()
+      ]);
       setGlobalSchools(schs);
       setGlobalClasses(cls);
       setGlobalStudents(stds);
+      setGlobalWorkloads(wls);
+      setProfessorsList(profs);
 
-      if (schs.length > 0 && !selectedGlobalSchoolId) {
+      const activeUser = localStorage.getItem('portal_active_user');
+      const userRole = localStorage.getItem('portal_user_role') || 'teacher';
+
+      // Check if this teacher is assigned a specific school on their account
+      let defaultSchoolId = '';
+      if (activeUser && userRole === 'teacher') {
+        const profAccount = profs.find((p: any) => p.username?.toLowerCase() === activeUser.toLowerCase());
+        if (profAccount?.schoolId) {
+          defaultSchoolId = profAccount.schoolId;
+        }
+      }
+
+      if (defaultSchoolId) {
+        setSelectedGlobalSchoolId(defaultSchoolId);
+      } else if (schs.length > 0 && !selectedGlobalSchoolId) {
         setSelectedGlobalSchoolId(schs[0].id);
       }
     } catch (err) {
@@ -338,6 +360,31 @@ export default function TabFSettings({
       setLoadingGlobals(false);
     }
   };
+
+  const activeUser = localStorage.getItem('portal_active_user') || '';
+  const userRole = localStorage.getItem('portal_user_role') || 'teacher';
+  const inspecting = localStorage.getItem('portal_inspecting_teacher') === 'true';
+
+  const isTeacherView = userRole === 'teacher' || inspecting;
+
+  // Class IDs assigned to active teacher by coordinator/admin in workloads
+  const teacherAssignedClassIds = useMemo(() => {
+    if (!activeUser) return new Set<string>();
+    const activeUserLower = activeUser.toLowerCase();
+    const assigned = globalWorkloads
+      .filter(w => w.teacherUsername && w.teacherUsername.toLowerCase() === activeUserLower)
+      .map(w => w.classId);
+    return new Set<string>(assigned);
+  }, [globalWorkloads, activeUser]);
+
+  // Classes filtered for the selected school & assigned to the teacher if in teacher view
+  const visibleGlobalClasses = useMemo(() => {
+    const schoolClasses = globalClasses.filter(c => c.schoolId === selectedGlobalSchoolId);
+    if (isTeacherView) {
+      return schoolClasses.filter(c => teacherAssignedClassIds.has(c.id));
+    }
+    return schoolClasses;
+  }, [globalClasses, selectedGlobalSchoolId, isTeacherView, teacherAssignedClassIds]);
 
   const handleAttachGlobalClass = async (cls: any) => {
     setAttachingClassId(cls.id);
@@ -3646,6 +3693,16 @@ export default function TabFSettings({
             </p>
           </div>
 
+          {isTeacherView && !loadingGlobals && teacherAssignedClassIds.size === 0 && (
+            <div className="bg-amber-950/40 border border-amber-800/60 p-4 rounded-xl flex items-start gap-3 text-amber-200 text-xs leading-relaxed animate-in fade-in duration-200">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block font-bold text-amber-300 mb-0.5">Nenhuma Turma Atribuída Pela Coordenação</strong>
+                O seu usuário (<strong>@{activeUser}</strong>) ainda não possui turmas ou disciplinas atribuídas pelo coordenador/administrador na Matriz Curricular. Entre em contato com a coordenação da escola para que registrem a sua atribuição de aulas no portal.
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {/* LHS: Select School and Class list */}
             <div className="lg:col-span-5 space-y-4">
@@ -3673,67 +3730,69 @@ export default function TabFSettings({
                     </div>
                   ) : (
                     <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                      {globalClasses
-                        .filter(c => c.schoolId === selectedGlobalSchoolId)
-                        .map((cls) => {
-                          const studentCount = globalStudents.filter(st => st.classId === cls.id).length;
-                          const isAttached = classes.some(localCls => {
-                            const localSch = schools.find(s => s.id === localCls.schoolId);
-                            const globalSch = globalSchools.find(s => s.id === cls.schoolId);
-                            return localCls.name.toLowerCase() === cls.name.toLowerCase() && 
-                                   localSch && globalSch && localSch.name.toLowerCase() === globalSch.name.toLowerCase();
-                          });
+                      {visibleGlobalClasses.map((cls) => {
+                        const studentCount = globalStudents.filter(st => st.classId === cls.id).length;
+                        const isAttached = classes.some(localCls => {
+                          const localSch = schools.find(s => s.id === localCls.schoolId);
+                          const globalSch = globalSchools.find(s => s.id === cls.schoolId);
+                          return localCls.name.toLowerCase() === cls.name.toLowerCase() && 
+                                 localSch && globalSch && localSch.name.toLowerCase() === globalSch.name.toLowerCase();
+                        });
 
-                          return (
-                            <div 
-                              key={cls.id}
-                              onClick={() => setSelectedClassIdForStudent(cls.id as any)}
-                              className={`p-3 rounded-xl border flex items-center justify-between gap-4 cursor-pointer transition ${
-                                String(selectedClassIdForStudent) === String(cls.id)
-                                  ? 'bg-amber-500/10 border-amber-500'
-                                  : 'bg-zinc-950/40 border-zinc-850 hover:bg-zinc-900/30'
-                              }`}
-                            >
-                              <div className="min-w-0">
-                                <span className="text-xs font-bold text-zinc-200 block truncate">{cls.name}</span>
-                                <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5">
-                                  <Users className="w-3 h-3 text-zinc-650" /> {studentCount} alunos cadastrados
-                                </span>
-                              </div>
+                        return (
+                          <div 
+                            key={cls.id}
+                            onClick={() => setSelectedClassIdForStudent(cls.id as any)}
+                            className={`p-3 rounded-xl border flex items-center justify-between gap-4 cursor-pointer transition ${
+                              String(selectedClassIdForStudent) === String(cls.id)
+                                ? 'bg-amber-500/10 border-amber-500'
+                                : 'bg-zinc-950/40 border-zinc-850 hover:bg-zinc-900/30'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="text-xs font-bold text-zinc-200 block truncate">{cls.name}</span>
+                              <span className="text-[10px] text-zinc-500 flex items-center gap-1 mt-0.5">
+                                <Users className="w-3 h-3 text-zinc-650" /> {studentCount} alunos cadastrados
+                              </span>
+                            </div>
 
-                              <div className="shrink-0 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                                {isAttached ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 select-none">
-                                      <Check className="w-3 h-3" /> Vinculada
-                                    </span>
-                                    <button
-                                      type="button"
-                                      disabled={attachingClassId === cls.id}
-                                      onClick={() => handleAttachGlobalClass(cls)}
-                                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-750 text-zinc-350 hover:text-zinc-200 text-[10px] font-bold rounded-lg border border-zinc-700 hover:border-zinc-650 transition shrink-0 cursor-pointer"
-                                      title="Atualizar lista de alunos e cargas horárias desta turma com a nuvem"
-                                    >
-                                      {attachingClassId === cls.id ? 'Sincronizando...' : 'Sincronizar'}
-                                    </button>
-                                  </div>
-                                ) : (
+                            <div className="shrink-0 flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                              {isAttached ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-1 rounded-lg font-bold flex items-center gap-1 shrink-0 select-none">
+                                    <Check className="w-3 h-3" /> Vinculada
+                                  </span>
                                   <button
                                     type="button"
                                     disabled={attachingClassId === cls.id}
                                     onClick={() => handleAttachGlobalClass(cls)}
-                                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg transition shrink-0 cursor-pointer"
+                                    className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-750 text-zinc-350 hover:text-zinc-200 text-[10px] font-bold rounded-lg border border-zinc-700 hover:border-zinc-650 transition shrink-0 cursor-pointer"
+                                    title="Atualizar lista de alunos e cargas horárias desta turma com a nuvem"
                                   >
-                                    {attachingClassId === cls.id ? 'Vinculando...' : 'Vincular'}
+                                    {attachingClassId === cls.id ? 'Sincronizando...' : 'Sincronizar'}
                                   </button>
-                                )}
-                              </div>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={attachingClassId === cls.id}
+                                  onClick={() => handleAttachGlobalClass(cls)}
+                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-[11px] font-bold rounded-lg transition shrink-0 cursor-pointer"
+                                >
+                                  {attachingClassId === cls.id ? 'Vinculando...' : 'Vincular'}
+                                </button>
+                              )}
                             </div>
-                          );
-                        })}
+                          </div>
+                        );
+                      })}
                       
-                      {selectedGlobalSchoolId && globalClasses.filter(c => c.schoolId === selectedGlobalSchoolId).length === 0 && (
-                        <p className="text-center py-6 text-zinc-500 text-xs">Nenhuma turma registrada pelo coordenador para esta escola.</p>
+                      {selectedGlobalSchoolId && visibleGlobalClasses.length === 0 && (
+                        <p className="text-center py-6 text-zinc-400 text-xs px-2 leading-relaxed">
+                          {isTeacherView && globalClasses.filter(c => c.schoolId === selectedGlobalSchoolId).length > 0
+                            ? `Nenhuma turma desta escola foi atribuída ao seu usuário (@${activeUser}) pelo coordenador. Entre em contato com a coordenação para cadastrar sua carga horária.`
+                            : 'Nenhuma turma registrada pelo coordenador para esta escola.'}
+                        </p>
                       )}
                       {!selectedGlobalSchoolId && (
                         <p className="text-center py-6 text-zinc-500 text-xs">Selecione uma escola acima para ver as turmas disponíveis.</p>
