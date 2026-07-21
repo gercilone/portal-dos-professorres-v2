@@ -36,6 +36,14 @@ service cloud.firestore {
         );
     }
 
+    // Checks if the coordinator has the same schoolId as the professor's schoolId
+    function coordinatorHasSameSchoolId(profSchoolId) {
+      return isCoordinator() && 
+        exists(/databases/$(database)/documents/coordinators/$(getSession().username)) &&
+        get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') != '' &&
+        get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') == profSchoolId;
+    }
+
     // --- Security Match Blocks ---
 
     // Session registry: Used by clients to bind their Auth UID to their username and role.
@@ -62,19 +70,39 @@ service cloud.firestore {
     }
 
     // Collection: professors
-    // Allowed: Readable by any signed-in user (needed on mount to check credentials and load login lists).
-    // Writable: Only by coordinators/admins (or the professor themselves editing their own profile), or bootstrapping.
+    // Allowed: Readable by any signed-in user (needed on mount to check credentials and load login lists),
+    // but coordinators can only read if they have matching schoolId.
     match /professors/{username} {
-      allow read: if isSignedIn();
-      allow write: if isCoordinator() || isProfessor(username) || !exists(/databases/$(database)/documents/coordinators/coordenador);
+      allow read: if isSignedIn() && (
+        !isCoordinator() || 
+        coordinatorHasSameSchoolId(resource.data.get('schoolId', ''))
+      );
+      allow create: if (
+        (isCoordinator() && coordinatorHasSameSchoolId(request.resource.data.get('schoolId', ''))) || 
+        (getSession().role == 'teacher' && getSession().username == username.toLowerCase()) || 
+        !exists(/databases/$(database)/documents/coordinators/coordenador)
+      );
+      allow update: if (
+        (isCoordinator() && 
+         coordinatorHasSameSchoolId(request.resource.data.get('schoolId', '')) &&
+         coordinatorHasSameSchoolId(resource.data.get('schoolId', ''))) || 
+        (getSession().role == 'teacher' && getSession().username == username.toLowerCase())
+      );
+      allow delete: if (
+        (isCoordinator() && coordinatorHasSameSchoolId(resource.data.get('schoolId', ''))) || 
+        (getSession().role == 'teacher' && getSession().username == username.toLowerCase())
+      );
     }
 
     // Collection: coordinators
     // Allowed: Readable by any signed-in user (needed on mount to load settings/coordinators list).
-    // Writable: Only by coordinators, or bootstrapping.
+    // Writable: Only by coordinators with non-empty schoolId (or bootstrapping).
     match /coordinators/{username} {
       allow read: if isSignedIn();
-      allow write: if isCoordinator() || !exists(/databases/$(database)/documents/coordinators/coordenador);
+      allow create, update: if (
+        isCoordinator() && request.resource.data.get('schoolId', '') != ''
+      ) || !exists(/databases/$(database)/documents/coordinators/coordenador);
+      allow delete: if isCoordinator();
     }
 
     // Collection: diaries (school diaries, grades, seen records, lessons, attendance)

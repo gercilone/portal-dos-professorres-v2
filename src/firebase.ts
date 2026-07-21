@@ -10,7 +10,9 @@ import {
   deleteDoc,
   writeBatch,
   setLogLevel,
-  enableNetwork
+  enableNetwork,
+  query,
+  where
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -418,8 +420,32 @@ export async function syncProfessorsListInCloud() {
 
   try {
     // A. Pull latest professors list from cloud with a 4-second timeout
-    const professorsCol = collection(dbInstance, 'professors');
-    const snapshot = await withTimeout(getDocs(professorsCol), 4000);
+    let professorsQuery: any = collection(dbInstance, 'professors');
+    
+    const activeUser = localStorage.getItem('portal_active_user')?.toLowerCase();
+    const userRole = localStorage.getItem('portal_user_role');
+    let restrictSchoolId = '';
+    
+    if (userRole === 'coordinator' && activeUser) {
+      const localCoords = localStorage.getItem('portal_coordinators_list');
+      if (localCoords) {
+        try {
+          const list = JSON.parse(localCoords);
+          const currentCoord = list.find((c: any) => c.username.toLowerCase() === activeUser);
+          if (currentCoord && currentCoord.schoolId) {
+            restrictSchoolId = currentCoord.schoolId;
+          }
+        } catch (e) {
+          console.error('Error checking coordinator schoolId:', e);
+        }
+      }
+    }
+
+    if (restrictSchoolId) {
+      professorsQuery = query(collection(dbInstance, 'professors'), where('schoolId', '==', restrictSchoolId));
+    }
+
+    const snapshot = await withTimeout(getDocs(professorsQuery), 4000);
     const cloudList: ProfessorAccount[] = [];
     
     snapshot.forEach((doc) => {
@@ -427,7 +453,8 @@ export async function syncProfessorsListInCloud() {
     });
 
     // If the cloud is completely empty, try to seed it from local list, or default list
-    if (cloudList.length === 0) {
+    // Only allow seeding if NOT restricted to a specific school to avoid overriding global data
+    if (cloudList.length === 0 && !restrictSchoolId) {
       const localStr = localStorage.getItem('portal_professors_list');
       let localList: ProfessorAccount[] = [];
       if (localStr) {
