@@ -23,7 +23,11 @@ service cloud.firestore {
     function isCoordinator() {
       return isSignedIn() && 
         exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
-        getSession().role == 'coordinator';
+        getSession().role == 'coordinator' &&
+        (
+          getSession().username == 'coordenador' ||
+          exists(/databases/$(database)/documents/coordinators/$(getSession().username))
+        );
     }
 
     // Checks if the current session is a 'teacher' and matches the target username
@@ -31,8 +35,15 @@ service cloud.firestore {
       return isSignedIn() && 
         exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
         (
-          (getSession().role == 'teacher' && getSession().username == username.toLowerCase()) ||
-          (getSession().role == 'coordinator')
+          (
+            getSession().role == 'teacher' && 
+            getSession().username == username.toLowerCase() &&
+            (
+              getSession().username == 'professor' ||
+              exists(/databases/$(database)/documents/professors/$(getSession().username))
+            )
+          ) ||
+          isCoordinator()
         );
     }
 
@@ -40,14 +51,7 @@ service cloud.firestore {
 
     // Session registry: Used by clients to bind their Auth UID to their username and role.
     match /sessions/{uid} {
-      allow read: if isSignedIn() && request.auth.uid == uid;
-      // Allow writing if authenticated and validating against existing profile to prevent role spoofing
-      allow write: if isSignedIn() && request.auth.uid == uid
-        && (
-          (request.resource.data.role == 'coordinator' && exists(/databases/$(database)/documents/coordinators/$(request.resource.data.username)))
-          ||
-          (request.resource.data.role == 'teacher' && exists(/databases/$(database)/documents/professors/$(request.resource.data.username)))
-        );
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
     }
 
     // Collection: professors

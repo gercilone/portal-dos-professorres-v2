@@ -110,6 +110,45 @@ export async function registerActiveSession() {
   }
 }
 
+let authReadyPromise: Promise<void> | null = null;
+
+export function getAuthReadyPromise(): Promise<void> {
+  if (authReadyPromise) return authReadyPromise;
+
+  try {
+    const auth = getAuth();
+    authReadyPromise = new Promise<void>((resolve) => {
+      if (auth.currentUser) {
+        resolve();
+        return;
+      }
+      
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          unsubscribe();
+          resolve();
+        }
+      });
+
+      // Timeout fallback after 4 seconds to avoid blocking indefinitely if network is down
+      setTimeout(() => {
+        unsubscribe();
+        resolve();
+      }, 4000);
+    });
+  } catch (err) {
+    console.warn('Could not initialize authReadyPromise:', err);
+    authReadyPromise = Promise.resolve();
+  }
+
+  return authReadyPromise;
+}
+
+export async function ensureAuthAndSession() {
+  await getAuthReadyPromise();
+  await registerActiveSession();
+}
+
 export function getFirestoreInstance() {
   if (firestoreInstance) return firestoreInstance;
   try {
@@ -190,6 +229,11 @@ export function isCloudFallback(): boolean {
 
 // Test connectivity to Firestore directly bypassing cache
 export async function testFirestoreConnection(): Promise<{ success: boolean; error?: any }> {
+  try {
+    await ensureAuthAndSession();
+  } catch (authErr) {
+    console.warn("Auth/Session prep failed during connection test:", authErr);
+  }
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) {
     return { success: false, error: new Error("Instância do Firestore não pôde ser inicializada.") };
@@ -283,6 +327,12 @@ export async function syncProfessorsListInCloud() {
   if (isCloudFallback()) {
     const localStr = localStorage.getItem('portal_professors_list');
     return localStr ? JSON.parse(localStr) : [];
+  }
+
+  try {
+    await ensureAuthAndSession();
+  } catch (authErr) {
+    console.warn("Auth/Session prep failed during professor sync:", authErr);
   }
 
   const dbInstance = getFirestoreInstance();
@@ -405,6 +455,12 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   if (!username) return false;
   if (isCloudFallback()) return false;
 
+  try {
+    await ensureAuthAndSession();
+  } catch (authErr) {
+    console.warn("Auth/Session prep failed during data pull:", authErr);
+  }
+
   const dbInstance = getFirestoreInstance();
   if (!dbInstance) return false;
 
@@ -461,6 +517,12 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
   if (isCloudFallback() && !isManual) {
     console.log('Cloud fallback is active. Skipping automatic background sync.');
     return false;
+  }
+
+  try {
+    await ensureAuthAndSession();
+  } catch (authErr) {
+    console.warn("Auth/Session prep failed during data push:", authErr);
   }
 
   const dbInstance = getFirestoreInstance();
@@ -611,6 +673,12 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
     const localStr = localStorage.getItem('portal_coordinators_list');
     if (localStr) return JSON.parse(localStr);
     return defaultCoordsList;
+  }
+
+  try {
+    await ensureAuthAndSession();
+  } catch (authErr) {
+    console.warn("Auth/Session prep failed during coordinator sync:", authErr);
   }
 
   const dbInstance = getFirestoreInstance();
