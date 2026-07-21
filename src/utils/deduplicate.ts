@@ -385,32 +385,6 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
         }
       }
 
-      // ==========================================
-      // 5. DEDUPLICATE & CLEANUP WORKLOADS
-      // ==========================================
-      const allWorkloads = await db.subjectWorkloads.toArray();
-      const validClassesIds = new Set((await db.classes.toArray()).map(c => c.id));
-      const validSubjectsMap = new Map((await db.subjects.toArray()).map(s => [s.id, s.name]));
-
-      const seenWlKeys = new Set<string>();
-      for (const wl of allWorkloads) {
-        const subjName = validSubjectsMap.get(wl.subjectId);
-        const isInvalidSubject = !subjName || subjName.trim().toLowerCase() === 'disciplina';
-        const isInvalidClass = !validClassesIds.has(wl.classId);
-
-        if (isInvalidSubject || isInvalidClass) {
-          await db.subjectWorkloads.delete(wl.id!);
-          continue;
-        }
-
-        const key = `${wl.classId}_${wl.subjectId}`;
-        if (seenWlKeys.has(key)) {
-          await db.subjectWorkloads.delete(wl.id!);
-        } else {
-          seenWlKeys.add(key);
-        }
-      }
-
     });
 
     // PUSH Consolidated clean local state back to the cloud immediately to resolve duplication on server
@@ -591,30 +565,6 @@ export async function deduplicateGlobalDatabase(): Promise<{
           await deleteGlobalStudent(dupStudent.id);
           studentsMerged++;
         }
-      }
-    }
-
-    // --- E. DEDUPLICATE GLOBAL WORKLOADS & REMOVE ORPHANS ---
-    const freshWorkloads = await getGlobalWorkloads();
-    const freshSubjectsMap = new Map((await getGlobalSubjects()).map(s => [s.id, s.name]));
-    const freshClassesSet = new Set((await getGlobalClasses()).map(c => c.id));
-
-    const seenGlobalWlKeys = new Set<string>();
-    for (const wl of freshWorkloads) {
-      const sName = freshSubjectsMap.get(wl.subjectId);
-      const isBadSub = !sName || sName.trim().toLowerCase() === 'disciplina';
-      const isBadClass = !freshClassesSet.has(wl.classId);
-
-      if (isBadSub || isBadClass) {
-        await deleteGlobalWorkload(wl.id);
-        continue;
-      }
-
-      const key = `${wl.classId}_${wl.subjectId}_${wl.teacherUsername?.toLowerCase() || ''}`;
-      if (seenGlobalWlKeys.has(key)) {
-        await deleteGlobalWorkload(wl.id);
-      } else {
-        seenGlobalWlKeys.add(key);
       }
     }
 

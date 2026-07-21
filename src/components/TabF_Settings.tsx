@@ -553,63 +553,6 @@ export default function TabFSettings({
   const workloads = useLiveQuery(() => db.subjectWorkloads.toArray()) || [];
   const weeklySchedules = useLiveQuery(() => db.weeklySchedule.toArray()) || [];
 
-  // Filter out invalid/generic/duplicate workloads
-  const validWorkloads = useMemo(() => {
-    const seenKeys = new Set<string>();
-    const result: typeof workloads = [];
-
-    for (const wl of workloads) {
-      const c = classes.find((cl) => cl.id === wl.classId);
-      const sub = subjects.find((s) => s.id === wl.subjectId);
-
-      if (!c || !sub || !sub.name || sub.name.trim().toLowerCase() === 'disciplina') {
-        continue;
-      }
-
-      const key = `${wl.classId}_${wl.subjectId}`;
-      if (!seenKeys.has(key)) {
-        seenKeys.add(key);
-        result.push(wl);
-      }
-    }
-
-    return result;
-  }, [workloads, classes, subjects]);
-
-  // Clean up orphan, generic or duplicate workloads from local IndexedDB
-  useEffect(() => {
-    if (!workloads || workloads.length === 0 || classes.length === 0 || subjects.length === 0) return;
-
-    const seenKeys = new Set<string>();
-    const idsToDelete: number[] = [];
-
-    for (const wl of workloads) {
-      const c = classes.find((cl) => cl.id === wl.classId);
-      const sub = subjects.find((s) => s.id === wl.subjectId);
-
-      const isBadSub = !sub || !sub.name || sub.name.trim().toLowerCase() === 'disciplina';
-      const isBadClass = !c;
-
-      if (isBadSub || isBadClass) {
-        if (wl.id) idsToDelete.push(wl.id);
-        continue;
-      }
-
-      const key = `${wl.classId}_${wl.subjectId}`;
-      if (seenKeys.has(key)) {
-        if (wl.id) idsToDelete.push(wl.id);
-      } else {
-        seenKeys.add(key);
-      }
-    }
-
-    if (idsToDelete.length > 0) {
-      db.subjectWorkloads.bulkDelete(idsToDelete).catch((err) => {
-        console.error('Error cleaning up local invalid/duplicate workloads:', err);
-      });
-    }
-  }, [workloads, classes, subjects]);
-
   const classesBySchool = selectedSchoolIdForStudent 
     ? [...classes].filter(c => c.schoolId === selectedSchoolIdForStudent).sort(sortClasses)
     : [];
@@ -3062,7 +3005,7 @@ export default function TabFSettings({
             
             <div className="bg-sky-950/30 border border-sky-900/50 p-4 rounded-xl space-y-3">
               <p className="text-[11px] text-sky-300 leading-relaxed">
-                O planejamento bimestral de cargas horárias (total de aulas por bimestre para cada matéria e série) é definido exclusivamente pela coordenação. 
+                O planejamento semestral de cargas horárias (total de aulas por semestre para cada matéria e série) é definido exclusivamente pela coordenação. 
                 Sincronize com a nuvem para vincular automaticamente as cargas horárias corretas às suas turmas locais.
               </p>
               <button
@@ -3085,12 +3028,12 @@ export default function TabFSettings({
 
             {/* List current workloads (Read-Only) */}
             <div className="space-y-2">
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({validWorkloads.length})</p>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({workloads.length})</p>
               <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
-                {validWorkloads.length === 0 ? (
+                {workloads.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma carga horária registrada ainda. Clique em Sincronizar acima.</p>
                 ) : (
-                  validWorkloads.map((wl) => {
+                  workloads.map((wl) => {
                     const c = classes.find((cl) => cl.id === wl.classId);
                     const sub = subjects.find((s) => s.id === wl.subjectId);
                     return (
@@ -3100,7 +3043,7 @@ export default function TabFSettings({
                           <span className="text-[10px] text-zinc-500 block">Série/Turma: {c?.name || '-'}</span>
                         </div>
                         <span className="font-mono font-bold bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-full text-sky-400 text-[10px] shrink-0">
-                          {wl.totalLessons} aulas/bimestre
+                          {wl.totalLessons} aulas/semestre
                         </span>
                       </div>
                     );
