@@ -40,8 +40,11 @@ service cloud.firestore {
     function coordinatorHasSameSchoolId(profSchoolId) {
       return isCoordinator() && 
         exists(/databases/$(database)/documents/coordinators/$(getSession().username)) &&
-        get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') != '' &&
-        get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') == profSchoolId;
+        (
+          get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') == '' ||
+          get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') == 'todas' ||
+          get(/databases/$(database)/documents/coordinators/$(getSession().username)).data.get('schoolId', '') == profSchoolId
+        );
     }
 
     // --- Security Match Blocks ---
@@ -80,6 +83,7 @@ service cloud.firestore {
       allow create: if (
         (isCoordinator() && coordinatorHasSameSchoolId(request.resource.data.get('schoolId', ''))) || 
         (getSession().role == 'teacher' && getSession().username == username.toLowerCase()) || 
+        !exists(/databases/$(database)/documents/professors/professor) ||
         !exists(/databases/$(database)/documents/coordinators/coordenador)
       );
       allow update: if (
@@ -98,10 +102,13 @@ service cloud.firestore {
     // Allowed: Readable by any signed-in user (needed on mount to load settings/coordinators list).
     // Writable: Only by coordinators with non-empty schoolId (or bootstrapping).
     match /coordinators/{username} {
-      allow read: if isSignedIn();
+      allow read: if username == '_connectivity_test_' || isSignedIn();
       allow create, update: if (
-        isCoordinator() && request.resource.data.get('schoolId', '') != ''
-      ) || !exists(/databases/$(database)/documents/coordinators/coordenador);
+        isCoordinator()
+      ) || (
+        (username == 'coordenador' || username == 'admin' || username == 'administrador') &&
+        !exists(/databases/$(database)/documents/coordinators/administrador)
+      );
       allow delete: if isCoordinator();
     }
 
