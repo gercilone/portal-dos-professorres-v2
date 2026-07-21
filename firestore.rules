@@ -2,57 +2,57 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Global Safety Net: default-deny catch-all to prevent unmapped collection exposure
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
     // --- Helper Functions ---
     
-    // In this application, users authenticate via custom credentials stored in the local Dexie DB and verified in local storage.
-    // Since Firebase Auth is not used client-side, request.auth is null. To support cross-device sync, we define helpers that default to true.
+    // Verifies that the client is authenticated via Firebase Authentication (e.g., our Silent Anonymous flow)
     function isSignedIn() {
-      return true;
-    }
-
-    function isProfessor(username) {
-      return true;
-    }
-
-    function isAuthorizedStaff() {
-      return true;
+      return request.auth != null;
     }
 
     // --- Security Match Blocks ---
 
     // Collection: professors
+    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
     match /professors/{username} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // Collection: coordinators
+    // Allowed: Readable and writable only by authenticated users (coordinators using our application)
     match /coordinators/{username} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // Collection: diaries (school diaries, grades, seen records, lessons, attendance)
+    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
     match /diaries/{username}/{tableName}/{recordId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
 
     // Global Collections (global_schools, global_classes, global_students, global_subjects, global_workloads, global_grades_control)
+    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
     match /global_schools/{schoolId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /global_classes/{classId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /global_students/{studentId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /global_subjects/{subjectId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /global_workloads/{workloadId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
     match /global_grades_control/{controlId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn();
     }
   }
 }

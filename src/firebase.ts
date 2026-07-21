@@ -12,6 +12,7 @@ import {
   setLogLevel,
   enableNetwork
 } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Silence Firestore's internal SDK logs in console to avoid noisy uncaught connection warnings/errors
@@ -86,6 +87,22 @@ export function getFirestoreInstance() {
     }
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     
+    // Silently sign in anonymously to ensure request.auth is populated in Firestore rules
+    try {
+      const auth = getAuth(app);
+      if (!auth.currentUser) {
+        signInAnonymously(auth)
+          .then(() => {
+            console.log('[Firebase Auth] Silently authenticated anonymously.');
+          })
+          .catch((authErr) => {
+            console.warn('[Firebase Auth] Silent anonymous authentication failed:', authErr);
+          });
+      }
+    } catch (authInitErr) {
+      console.warn('[Firebase Auth] Could not initialize or trigger Firebase Auth:', authInitErr);
+    }
+
     // Use initializeFirestore with experimentalAutoDetectLongPolling for stable, auto-recovering connections
     try {
       firestoreInstance = initializeFirestore(app, {
