@@ -1,27 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default catch-all rule: lock down everything by default
-    match /{document=**} {
-      allow read, write: if false;
+    
+    // --- Helper Functions ---
+    
+    // In this application, users authenticate via custom credentials stored in the local Dexie DB and verified in local storage.
+    // Since Firebase Auth is not used client-side, request.auth is null. To support cross-device sync, we define helpers that default to true.
+    function isSignedIn() {
+      return true;
     }
 
-    // Allow read/write access to professors profile directory for custom credentials check
+    function isProfessor(username) {
+      return true;
+    }
+
+    function isAuthorizedStaff() {
+      return true;
+    }
+
+    // --- Security Match Blocks ---
+
+    // Collection: professors
     match /professors/{username} {
       allow read, write: if true;
     }
 
-    // Allow read/write access to coordinators directory for custom coordinator authentication
+    // Collection: coordinators
     match /coordinators/{username} {
       allow read, write: if true;
     }
 
-    // Allow read/write access to teacher class diaries so syncing works
+    // Collection: diaries (school diaries, grades, seen records, lessons, attendance)
     match /diaries/{username}/{tableName}/{recordId} {
       allow read, write: if true;
     }
 
-    // Allow read/write access to global schools, classes and students
+    // Global Collections (global_schools, global_classes, global_students, global_subjects, global_workloads, global_grades_control)
     match /global_schools/{schoolId} {
       allow read, write: if true;
     }
