@@ -12,7 +12,8 @@
         "passwordHint": { "type": "string" },
         "securityQuestion": { "type": "string" },
         "securityAnswer": { "type": "string" },
-        "authEnabled": { "type": "boolean" }
+        "authEnabled": { "type": "boolean" },
+        "schoolId": { "type": "string" }
       },
       "required": ["username", "password", "teacherName", "dbName"]
     },
@@ -23,7 +24,8 @@
       "properties": {
         "username": { "type": "string" },
         "password": { "type": "string" },
-        "name": { "type": "string" }
+        "name": { "type": "string" },
+        "schoolId": { "type": "string" }
       },
       "required": ["username", "password", "name"]
     },

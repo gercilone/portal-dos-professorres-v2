@@ -222,6 +222,7 @@ export interface ProfessorAccount {
   securityQuestion?: string;
   securityAnswer?: string;
   authEnabled: boolean;
+  schoolId?: string;
 }
 
 // Timeout utility to ensure network calls do not block forever in sandboxed/offline-prone environments
