@@ -257,6 +257,71 @@ export default function App() {
     }
   };
 
+  // Intelligent background synchronization policy to prevent data loss across devices (PC/Tablet)
+  useEffect(() => {
+    const activeUser = localStorage.getItem('portal_active_user');
+    if (!activeUser || userRole !== 'teacher' || isCloudFallbackActive) return;
+
+    let isSyncing = false;
+
+    // Periodic check every 30 seconds to push any unsaved changes
+    const periodicSync = setInterval(async () => {
+      const hasUnsaved = localStorage.getItem('portal_has_unsaved_changes') === 'true';
+      if (hasUnsaved && !isSyncing) {
+        isSyncing = true;
+        console.log('[Background Sync] Pushing unsaved changes to cloud...');
+        try {
+          await pushTeacherDataToCloud(activeUser, db);
+        } catch (e) {
+          console.error('[Background Sync] Push failed:', e);
+        } finally {
+          isSyncing = false;
+        }
+      }
+    }, 30000);
+
+    // Visibility change handler (locks screen, switches tab, closes tab)
+    const handleVisibilityChange = async () => {
+      if (document.hidden) {
+        // Document became hidden: push any unsaved changes immediately
+        const hasUnsaved = localStorage.getItem('portal_has_unsaved_changes') === 'true';
+        if (hasUnsaved && !isSyncing) {
+          isSyncing = true;
+          console.log('[Background Sync] Page hidden. Forcing push to cloud...');
+          try {
+            await pushTeacherDataToCloud(activeUser, db);
+          } catch (e) {
+            console.error('[Background Sync] Forced push failed:', e);
+          } finally {
+            isSyncing = false;
+          }
+        }
+      } else {
+        // Document became visible: pull any new changes from cloud to stay in sync with other devices,
+        // but ONLY if we do not have unsaved changes locally (to prevent overwriting offline edits)
+        const hasUnsaved = localStorage.getItem('portal_has_unsaved_changes') === 'true';
+        if (!hasUnsaved && !isSyncing) {
+          isSyncing = true;
+          console.log('[Background Sync] Page visible. Pulling latest cloud data to stay in sync...');
+          try {
+            await pullTeacherDataFromCloud(activeUser, db);
+          } catch (e) {
+            console.error('[Background Sync] Background pull failed:', e);
+          } finally {
+            isSyncing = false;
+          }
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(periodicSync);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isCloudFallbackActive, userRole]);
+
   // COORDINATOR MANUAL SAVE/SYNC STATE
   const [isSavingCoord, setIsSavingCoord] = useState(false);
   const [saveCoordSuccess, setSaveCoordSuccess] = useState<boolean | null>(null);

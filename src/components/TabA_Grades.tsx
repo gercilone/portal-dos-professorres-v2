@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { db, setCloudSyncDisabled } from '../db';
 import { Student, BimonthlyGrade, AssignmentDescription, ExtraGrade } from '../types';
 import { Edit2, Save, Info, AlertTriangle, Check, RefreshCw, Download, Upload, Sparkles, Trash2 } from 'lucide-react';
 import {
@@ -299,6 +299,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
     if (!classId || !subjectId) return;
 
     try {
+      setCloudSyncDisabled(true);
       await db.transaction('rw', [db.bimonthlyGrades], async () => {
         for (const student of students) {
           // Skip inactive students
@@ -328,6 +329,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
           }
         }
       });
+      setCloudSyncDisabled(false);
 
       // Synchronize with cloud if logged in
       const activeUser = localStorage.getItem('portal_active_user');
@@ -344,6 +346,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
         message: `As notas para a atividade selecionada foram preenchidas em lote com sucesso!`
       });
     } catch (err) {
+      setCloudSyncDisabled(false);
       console.error('Error during bulk grade fill:', err);
       setAlertDialog({
         isOpen: true,
@@ -376,6 +379,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
       onConfirm: async () => {
         setConfirmDialog(null);
         try {
+          setCloudSyncDisabled(true);
           await db.transaction('rw', [db.bimonthlyGrades], async () => {
             for (const student of students) {
               if (student.active === false) {
@@ -388,6 +392,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
               }
             }
           });
+          setCloudSyncDisabled(false);
 
           // Sync with cloud if logged in
           const activeUser = localStorage.getItem('portal_active_user');
@@ -403,6 +408,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
             message: `As notas de "${fieldLabel}" foram limpas com sucesso!`
           });
         } catch (err) {
+          setCloudSyncDisabled(false);
           console.error('Error during clearing column grades:', err);
           setAlertDialog({
             isOpen: true,
@@ -582,6 +588,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
             setConfirmDialog(null);
             
             try {
+              setCloudSyncDisabled(true);
               await db.transaction('rw', [db.bimonthlyGrades], async () => {
                 for (const update of gradesToUpdate) {
                   const existingGrade = grades.find(g => g.studentId === update.studentId);
@@ -606,6 +613,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                   }
                 }
               });
+              setCloudSyncDisabled(false);
 
               // Sincronizar as alterações com o Firebase Firestore se logado
               const activeUser = localStorage.getItem('portal_active_user');
@@ -623,6 +631,7 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
                 message: `As notas de ${gradesToUpdate.length} alunos foram importadas, restauradas e sincronizadas com sucesso tanto localmente quanto na nuvem!`
               });
             } catch (saveErr) {
+              setCloudSyncDisabled(false);
               console.error('Error saving imported grades:', saveErr);
               setAlertDialog({
                 isOpen: true,
