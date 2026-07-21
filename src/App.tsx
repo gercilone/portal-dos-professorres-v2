@@ -38,7 +38,8 @@ import {
   pushGlobalDataToCloud,
   testFirestoreConnection,
   forceEnableNetworkAndTest,
-  getActiveCoordinatorSchoolId
+  getActiveCoordinatorSchoolId,
+  registerActiveSession
 } from './firebase';
 
 type TabKey = 'attendance' | 'grades' | 'vistos' | 'gamification' | 'reports' | 'settings';
@@ -624,6 +625,11 @@ export default function App() {
         setIsAuthenticated(true);
         setUserRole('coordinator');
         setLoginError('');
+        try {
+          await registerActiveSession();
+        } catch (sessionErr) {
+          console.warn('Session write error during login:', sessionErr);
+        }
         window.location.reload();
         return;
       } else {
@@ -709,6 +715,11 @@ export default function App() {
         setTeacherName(matchingProf.teacherName);
         setIsAuthEnabled(matchingProf.authEnabled);
         
+        try {
+          await registerActiveSession();
+        } catch (sessionErr) {
+          console.warn('Session write error during login:', sessionErr);
+        }
         window.location.reload();
       } else {
         setLoginError('Senha incorreta. Tente novamente.');
@@ -1173,6 +1184,13 @@ export default function App() {
       isDbInitializing = true;
 
       try {
+        // Register active session to allow Firestore rules to authorize requests
+        try {
+          await registerActiveSession();
+        } catch (sessErr) {
+          console.warn('Session registration error on mount:', sessErr);
+        }
+
         // Sync coordinator profiles list from the cloud on mount
         try {
           const updatedList = await syncCoordinatorsListInCloud();

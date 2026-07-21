@@ -78,6 +78,38 @@ if (typeof window !== 'undefined') {
   window.addEventListener('unhandledrejection', handleGlobalFirestoreAssertionError);
 }
 
+export async function registerActiveSession() {
+  if (isCloudFallback()) return;
+  const dbInstance = getFirestoreInstance();
+  if (!dbInstance) return;
+
+  try {
+    const auth = getAuth();
+    if (auth.currentUser) {
+      const isInspecting = localStorage.getItem('portal_is_inspecting_mode') === 'true';
+      const role = localStorage.getItem('portal_user_role'); // 'teacher' or 'coordinator'
+      let activeUser = localStorage.getItem('portal_active_user');
+
+      if (isInspecting && role === 'coordinator') {
+        // Use the actual coordinator username for session registration
+        activeUser = localStorage.getItem('portal_coord_logged_in_username') || 'coordenador';
+      }
+
+      if (activeUser && role) {
+        const uid = auth.currentUser.uid;
+        await setDoc(doc(dbInstance, 'sessions', uid), {
+          username: activeUser.toLowerCase(),
+          role: role,
+          timestamp: new Date().toISOString()
+        });
+        console.log(`[Firebase Session] Session registered successfully for UID ${uid}: ${activeUser} (${role})`);
+      }
+    }
+  } catch (err) {
+    console.warn('[Firebase Session] Could not register active session:', err);
+  }
+}
+
 export function getFirestoreInstance() {
   if (firestoreInstance) return firestoreInstance;
   try {
@@ -87,22 +119,6 @@ export function getFirestoreInstance() {
     }
     const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
     
-    // Silently sign in anonymously to ensure request.auth is populated in Firestore rules
-    try {
-      const auth = getAuth(app);
-      if (!auth.currentUser) {
-        signInAnonymously(auth)
-          .then(() => {
-            console.log('[Firebase Auth] Silently authenticated anonymously.');
-          })
-          .catch((authErr) => {
-            console.warn('[Firebase Auth] Silent anonymous authentication failed:', authErr);
-          });
-      }
-    } catch (authInitErr) {
-      console.warn('[Firebase Auth] Could not initialize or trigger Firebase Auth:', authInitErr);
-    }
-
     // Use initializeFirestore with experimentalAutoDetectLongPolling for stable, auto-recovering connections
     try {
       firestoreInstance = initializeFirestore(app, {
@@ -111,6 +127,27 @@ export function getFirestoreInstance() {
     } catch (e) {
       // Fallback to standard getFirestore if initializeFirestore fails
       firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+    }
+
+    // Silently sign in anonymously to ensure request.auth is populated in Firestore rules
+    try {
+      const auth = getAuth(app);
+      
+      auth.onAuthStateChanged((user) => {
+        if (user) {
+          console.log('[Firebase Auth] Silently authenticated anonymously. UID:', user.uid);
+          registerActiveSession();
+        }
+      });
+
+      if (!auth.currentUser) {
+        signInAnonymously(auth)
+          .catch((authErr) => {
+            console.warn('[Firebase Auth] Silent anonymous authentication failed:', authErr);
+          });
+      }
+    } catch (authInitErr) {
+      console.warn('[Firebase Auth] Could not initialize or trigger Firebase Auth:', authInitErr);
     }
     
     return firestoreInstance;

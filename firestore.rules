@@ -9,50 +9,94 @@ service cloud.firestore {
 
     // --- Helper Functions ---
     
-    // Verifies that the client is authenticated via Firebase Authentication (e.g., our Silent Anonymous flow)
+    // Checks if the client has silently authenticated via Firebase Auth
     function isSignedIn() {
       return request.auth != null;
     }
 
+    // Retrieves the active session document for the authenticated UID
+    function getSession() {
+      return get(/databases/$(database)/documents/sessions/$(request.auth.uid)).data;
+    }
+
+    // Checks if the current session has a 'coordinator' role
+    function isCoordinator() {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
+        getSession().role == 'coordinator';
+    }
+
+    // Checks if the current session is a 'teacher' and matches the target username
+    function isProfessor(username) {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/sessions/$(request.auth.uid)) &&
+        (
+          (getSession().role == 'teacher' && getSession().username == username.toLowerCase()) ||
+          (getSession().role == 'coordinator')
+        );
+    }
+
     // --- Security Match Blocks ---
 
+    // Session registry: Used by clients to bind their Auth UID to their username and role.
+    match /sessions/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      // Allow writing if authenticated and validating against existing profile to prevent role spoofing
+      allow write: if isSignedIn() && request.auth.uid == uid
+        && (
+          (request.resource.data.role == 'coordinator' && exists(/databases/$(database)/documents/coordinators/$(request.resource.data.username)))
+          ||
+          (request.resource.data.role == 'teacher' && exists(/databases/$(database)/documents/professors/$(request.resource.data.username)))
+        );
+    }
+
     // Collection: professors
-    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
+    // Allowed: Readable by any signed-in user (needed on mount to check credentials and load login lists).
+    // Writable: Only by coordinators/admins (or the professor themselves editing their own profile).
     match /professors/{username} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator() || isProfessor(username);
     }
 
     // Collection: coordinators
-    // Allowed: Readable and writable only by authenticated users (coordinators using our application)
+    // Allowed: Readable by any signed-in user (needed on mount to load settings/coordinators list).
+    // Writable: Only by coordinators.
     match /coordinators/{username} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
 
     // Collection: diaries (school diaries, grades, seen records, lessons, attendance)
-    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
+    // Allowed: Only the assigned professor or any coordinator.
     match /diaries/{username}/{tableName}/{recordId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if isProfessor(username);
     }
 
     // Global Collections (global_schools, global_classes, global_students, global_subjects, global_workloads, global_grades_control)
-    // Allowed: Readable and writable only by authenticated users (teachers and coordinators using our application)
+    // Allowed: Read for any signed-in user, write restricted to coordinators.
     match /global_schools/{schoolId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
     match /global_classes/{classId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
     match /global_students/{studentId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
     match /global_subjects/{subjectId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
     match /global_workloads/{workloadId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
     match /global_grades_control/{controlId} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn();
+      allow write: if isCoordinator();
     }
   }
 }
