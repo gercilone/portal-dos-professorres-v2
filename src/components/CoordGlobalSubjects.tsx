@@ -56,7 +56,7 @@ export default function CoordGlobalSubjects() {
 
   // Form states - Workload
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
-  const [workloadLessons, setWorkloadLessons] = useState<number>(80);
+  const [workloadLessons, setWorkloadLessons] = useState<number>(40);
   const [editingWorkloadId, setEditingWorkloadId] = useState<string | null>(null);
   const [editingWorkloadLessons, setEditingWorkloadLessons] = useState<number | ''>('');
   const [selectedTeacherUsername, setSelectedTeacherUsername] = useState<string>('');
@@ -477,7 +477,7 @@ export default function CoordGlobalSubjects() {
 
                   {/* Lessons Count */}
                   <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-400 font-bold uppercase block">Carga Horária (Total de Aulas por Semestre)</label>
+                    <label className="text-[10px] text-zinc-400 font-bold uppercase block">Carga Horária (Total de Aulas por Bimestre)</label>
                     <input
                       type="number"
                       required
@@ -625,7 +625,7 @@ export default function CoordGlobalSubjects() {
                               ) : (
                                 <>
                                   <span className="text-amber-400 font-mono font-bold bg-amber-500/10 px-2.5 py-1 rounded border border-amber-500/20 text-xs">
-                                    {wl.totalLessons} aulas/semestre
+                                    {wl.totalLessons} aulas/bimestre
                                   </span>
                                   <button
                                     onClick={() => {
