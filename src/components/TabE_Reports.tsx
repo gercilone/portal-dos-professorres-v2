@@ -389,13 +389,17 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         const b3 = getStudentBimonthlyVal(st.id!, 3);
         const b4 = getStudentBimonthlyVal(st.id!, 4);
 
+        const isInactive = st.active === false;
+
         const hasSem1 = b1 !== null || b2 !== null;
         const soma1 = hasSem1 ? (b1 ?? 0) + (b2 ?? 0) : null;
-        if (soma1 !== null && soma1 < 14.0) countSem1Below++;
+        const sem1Below = isInactive ? (soma1 === null || soma1 < 14.0) : (soma1 !== null && soma1 < 14.0);
+        if (sem1Below) countSem1Below++;
 
         const hasSem2 = b3 !== null || b4 !== null;
         const soma2 = hasSem2 ? (b3 ?? 0) + (b4 ?? 0) : null;
-        if (soma2 !== null && soma2 < 14.0) countSem2Below++;
+        const sem2Below = isInactive ? (soma2 === null || soma2 < 14.0) : (soma2 !== null && soma2 < 14.0);
+        if (sem2Below) countSem2Below++;
 
         const extra = extraGrades.find(eg => eg.studentId === st.id!);
         const r1 = extra?.recSem1 !== undefined && extra.recSem1 !== null ? Number(extra.recSem1) : null;
@@ -431,7 +435,9 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         const pfStr = pf !== null ? pf.toFixed(1).replace('.', ',') : '-';
         const maStr = ma !== null ? ma.toFixed(1).replace('.', ',') : '-';
 
-        csvContent += `${st.rollNumber},"${st.name}",${b1Str},${b2Str},${soma1Str},${r1Str},${b3Str},${b4Str},${soma2Str},${r2Str},${pfStr},${maStr}\n`;
+        const nameStr = isInactive ? `"${st.name} (Matrícula Encerrada)"` : `"${st.name}"`;
+
+        csvContent += `${st.rollNumber},${nameStr},${b1Str},${b2Str},${soma1Str},${r1Str},${b3Str},${b4Str},${soma2Str},${r2Str},${pfStr},${maStr}\n`;
       });
 
       csvContent += `TOTAL DE ALUNOS COM SOMA ABAIXO DE 14.0 (RECUPERAÇÃO),,,${countSem1Below} aluno(s),,,,,,${countSem2Below} aluno(s),,\n`;
@@ -890,14 +896,16 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
             const b3 = getStudentBimonthlyVal(st.id!, 3);
             const b4 = getStudentBimonthlyVal(st.id!, 4);
 
+            const isInactive = st.active === false;
+
             const hasSem1 = b1 !== null || b2 !== null;
             const soma1 = hasSem1 ? (b1 ?? 0) + (b2 ?? 0) : null;
-            const sem1Below = soma1 !== null && soma1 < 14.0;
+            const sem1Below = isInactive ? (soma1 === null || soma1 < 14.0) : (soma1 !== null && soma1 < 14.0);
             if (sem1Below) countSem1Below++;
 
             const hasSem2 = b3 !== null || b4 !== null;
             const soma2 = hasSem2 ? (b3 ?? 0) + (b4 ?? 0) : null;
-            const sem2Below = soma2 !== null && soma2 < 14.0;
+            const sem2Below = isInactive ? (soma2 === null || soma2 < 14.0) : (soma2 !== null && soma2 < 14.0);
             if (sem2Below) countSem2Below++;
 
             if (sem1Below || sem2Below) countTotalRec++;
@@ -928,6 +936,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
 
             return {
               st,
+              isInactive,
               b1,
               b2,
               soma1,
@@ -1054,29 +1063,46 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                       </tr>
                     ) : (
                       rows.map((row) => {
-                        const { st, b1, b2, soma1, sem1Below, r1, b3, b4, soma2, sem2Below, r2, pf, ma } = row;
+                        const { st, isInactive, b1, b2, soma1, sem1Below, r1, b3, b4, soma2, sem2Below, r2, pf, ma } = row;
 
                         return (
-                          <tr key={st.id} className="hover:bg-white/5 transition-colors text-zinc-300 print:text-black">
+                          <tr key={st.id} className={`transition-colors ${
+                            isInactive 
+                              ? 'bg-zinc-950/40 opacity-70 hover:bg-zinc-950/60' 
+                              : 'hover:bg-white/5 text-zinc-300 print:text-black'
+                          }`}>
                             <td className="py-3 px-3 text-center font-bold text-zinc-500 print:text-black">{st.rollNumber}</td>
-                            <td className="py-3 px-4 font-sans font-medium text-zinc-200 print:text-black">{st.name}</td>
+                            <td className="py-3 px-4 font-sans font-medium text-zinc-200 print:text-black">
+                              <span className={isInactive ? 'line-through text-zinc-500 decoration-zinc-600 block' : ''}>
+                                {st.name}
+                              </span>
+                              {isInactive && (
+                                <span className="text-[10px] text-rose-400 font-semibold block mt-0.5">
+                                  Matrícula Encerrada
+                                </span>
+                              )}
+                            </td>
 
                             {/* 1º Bim */}
-                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                            <td className={`py-3 px-2.5 text-center font-semibold ${
+                              b1 !== null && b1 < 7.0 ? 'text-red-400 font-bold print:text-red-600' : 'text-zinc-300 print:text-black'
+                            }`}>
                               {b1 !== null ? b1.toFixed(1).replace('.', ',') : '-'}
                             </td>
 
                             {/* 2º Bim */}
-                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                            <td className={`py-3 px-2.5 text-center font-semibold ${
+                              b2 !== null && b2 < 7.0 ? 'text-red-400 font-bold print:text-red-600' : 'text-zinc-300 print:text-black'
+                            }`}>
                               {b2 !== null ? b2.toFixed(1).replace('.', ',') : '-'}
                             </td>
 
                             {/* Soma 1º Semestre */}
                             <td className={`py-3 px-3 text-center font-black border-x border-zinc-800 ${
-                              soma1 === null
-                                ? 'text-zinc-600'
-                                : sem1Below
+                              sem1Below
                                 ? 'text-red-400 bg-red-500/10 print:bg-red-100 print:text-red-800'
+                                : soma1 === null
+                                ? 'text-zinc-600'
                                 : 'text-emerald-400 bg-emerald-500/5 print:bg-emerald-50 print:text-emerald-800'
                             }`}>
                               {soma1 !== null ? soma1.toFixed(1).replace('.', ',') : '-'}
@@ -1088,21 +1114,25 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
                             </td>
 
                             {/* 3º Bim */}
-                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                            <td className={`py-3 px-2.5 text-center font-semibold ${
+                              b3 !== null && b3 < 7.0 ? 'text-red-400 font-bold print:text-red-600' : 'text-zinc-300 print:text-black'
+                            }`}>
                               {b3 !== null ? b3.toFixed(1).replace('.', ',') : '-'}
                             </td>
 
                             {/* 4º Bim */}
-                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                            <td className={`py-3 px-2.5 text-center font-semibold ${
+                              b4 !== null && b4 < 7.0 ? 'text-red-400 font-bold print:text-red-600' : 'text-zinc-300 print:text-black'
+                            }`}>
                               {b4 !== null ? b4.toFixed(1).replace('.', ',') : '-'}
                             </td>
 
                             {/* Soma 2º Semestre */}
                             <td className={`py-3 px-3 text-center font-black border-x border-zinc-800 ${
-                              soma2 === null
-                                ? 'text-zinc-600'
-                                : sem2Below
+                              sem2Below
                                 ? 'text-red-400 bg-red-500/10 print:bg-red-100 print:text-red-800'
+                                : soma2 === null
+                                ? 'text-zinc-600'
                                 : 'text-emerald-400 bg-emerald-500/5 print:bg-emerald-50 print:text-emerald-800'
                             }`}>
                               {soma2 !== null ? soma2.toFixed(1).replace('.', ',') : '-'}
