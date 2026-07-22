@@ -101,11 +101,14 @@ export async function registerActiveSession() {
 
       if (activeUser && role) {
         const uid = auth.currentUser.uid;
-        await setDoc(doc(dbInstance, 'sessions', uid), {
-          username: activeUser.toLowerCase(),
-          role: role,
-          timestamp: new Date().toISOString()
-        });
+        await withTimeout(
+          setDoc(doc(dbInstance, 'sessions', uid), {
+            username: activeUser.toLowerCase(),
+            role: role,
+            timestamp: new Date().toISOString()
+          }),
+          2500
+        );
         console.log(`[Firebase Session] Session registered successfully for UID ${uid}: ${activeUser} (${role})`);
         logDetailedFirebaseDebug(`registerActiveSession - Sessão registrada com sucesso para UID: ${uid}, Usuário: ${activeUser}, Cargo: ${role}`);
       } else {
@@ -164,7 +167,9 @@ export function getAuthReadyPromise(): Promise<void> {
 
 export async function ensureAuthAndSession() {
   await getAuthReadyPromise();
-  await registerActiveSession();
+  registerActiveSession().catch((err) => {
+    console.warn('[Firebase Session] Non-blocking session registration note:', err);
+  });
 }
 
 export function getFirestoreInstance() {
@@ -558,12 +563,12 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   try {
     const userLower = username.toLowerCase();
     
-    // Fetch all tables in parallel to make it extremely fast, wrapped in a 25-second timeout for mobile networks!
+    // Fetch all tables in parallel with a snappy 3.5s per-table timeout and 5s max overall timeout!
     const fetchAllPromise = Promise.all(
       TABLES_TO_SYNC.map(async (tableName) => {
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          const snapshot = await getDocs(colRef);
+          const snapshot = await withTimeout(getDocs(colRef), 3500);
           const records: any[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
@@ -578,13 +583,17 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
       })
     );
 
-    const results = await withTimeout(fetchAllPromise, 25000);
+    const results = await withTimeout(fetchAllPromise, 5000);
+    const totalRecords = results.reduce((sum, item) => sum + item.records.length, 0);
 
-    for (const { tableName, records } of results) {
-      if (dexieDb[tableName]) {
-        await dexieDb[tableName].clear();
-        if (records.length > 0) {
-          await dexieDb[tableName].bulkAdd(records);
+    // Only clear and replace local records if cloud actually returned data
+    if (totalRecords > 0) {
+      for (const { tableName, records } of results) {
+        if (dexieDb[tableName]) {
+          await dexieDb[tableName].clear();
+          if (records.length > 0) {
+            await dexieDb[tableName].bulkAdd(records);
+          }
         }
       }
     }
