@@ -1755,43 +1755,48 @@ export default function TabFSettings({
                 }));
               }
 
-              // Transactional overwrite
-              await db.transaction('rw', [
-                db.schools, db.classes, db.subjects, db.students, db.subjectWorkloads,
-                db.weeklySchedule, db.bimonthlyGrades, db.assignmentDescriptions,
-                db.lessons, db.attendance, db.vistoColumns, db.studentVistos,
-                db.vistoRankingScores, db.extraGrades
-              ], async () => {
-                await db.schools.clear();
-                await db.classes.clear();
-                await db.subjects.clear();
-                await db.students.clear();
-                await db.subjectWorkloads.clear();
-                await db.weeklySchedule.clear();
-                await db.bimonthlyGrades.clear();
-                await db.assignmentDescriptions.clear();
-                await db.lessons.clear();
-                await db.attendance.clear();
-                await db.vistoColumns.clear();
-                await db.studentVistos.clear();
-                await db.vistoRankingScores.clear();
-                await db.extraGrades.clear();
+              // Transactional overwrite with sync disabled so clear/bulkAdd don't delete Firestore
+              setCloudSyncDisabled(true);
+              try {
+                await db.transaction('rw', [
+                  db.schools, db.classes, db.subjects, db.students, db.subjectWorkloads,
+                  db.weeklySchedule, db.bimonthlyGrades, db.assignmentDescriptions,
+                  db.lessons, db.attendance, db.vistoColumns, db.studentVistos,
+                  db.vistoRankingScores, db.extraGrades
+                ], async () => {
+                  await db.schools.clear();
+                  await db.classes.clear();
+                  await db.subjects.clear();
+                  await db.students.clear();
+                  await db.subjectWorkloads.clear();
+                  await db.weeklySchedule.clear();
+                  await db.bimonthlyGrades.clear();
+                  await db.assignmentDescriptions.clear();
+                  await db.lessons.clear();
+                  await db.attendance.clear();
+                  await db.vistoColumns.clear();
+                  await db.studentVistos.clear();
+                  await db.vistoRankingScores.clear();
+                  await db.extraGrades.clear();
 
-                if (data.schools) await db.schools.bulkAdd(data.schools);
-                if (data.classes) await db.classes.bulkAdd(data.classes);
-                if (data.subjects) await db.subjects.bulkAdd(data.subjects);
-                if (data.students) await db.students.bulkAdd(data.students);
-                if (data.subjectWorkloads) await db.subjectWorkloads.bulkAdd(data.subjectWorkloads);
-                if (data.weeklySchedule) await db.weeklySchedule.bulkAdd(data.weeklySchedule);
-                if (data.bimonthlyGrades) await db.bimonthlyGrades.bulkAdd(data.bimonthlyGrades);
-                if (data.assignmentDescriptions) await db.assignmentDescriptions.bulkAdd(data.assignmentDescriptions);
-                if (data.lessons) await db.lessons.bulkAdd(data.lessons);
-                if (data.attendance) await db.attendance.bulkAdd(data.attendance);
-                if (data.vistoColumns) await db.vistoColumns.bulkAdd(data.vistoColumns);
-                if (data.studentVistos) await db.studentVistos.bulkAdd(data.studentVistos);
-                if (data.vistoRankingScores) await db.vistoRankingScores.bulkAdd(data.vistoRankingScores);
-                if (data.extraGrades) await db.extraGrades.bulkAdd(data.extraGrades);
-              });
+                  if (data.schools) await db.schools.bulkAdd(data.schools);
+                  if (data.classes) await db.classes.bulkAdd(data.classes);
+                  if (data.subjects) await db.subjects.bulkAdd(data.subjects);
+                  if (data.students) await db.students.bulkAdd(data.students);
+                  if (data.subjectWorkloads) await db.subjectWorkloads.bulkAdd(data.subjectWorkloads);
+                  if (data.weeklySchedule) await db.weeklySchedule.bulkAdd(data.weeklySchedule);
+                  if (data.bimonthlyGrades) await db.bimonthlyGrades.bulkAdd(data.bimonthlyGrades);
+                  if (data.assignmentDescriptions) await db.assignmentDescriptions.bulkAdd(data.assignmentDescriptions);
+                  if (data.lessons) await db.lessons.bulkAdd(data.lessons);
+                  if (data.attendance) await db.attendance.bulkAdd(data.attendance);
+                  if (data.vistoColumns) await db.vistoColumns.bulkAdd(data.vistoColumns);
+                  if (data.studentVistos) await db.studentVistos.bulkAdd(data.studentVistos);
+                  if (data.vistoRankingScores) await db.vistoRankingScores.bulkAdd(data.vistoRankingScores);
+                  if (data.extraGrades) await db.extraGrades.bulkAdd(data.extraGrades);
+                });
+              } finally {
+                setCloudSyncDisabled(false);
+              }
 
               // Automatically sync/push the imported and normalized data to the Cloud (Firestore)
               const activeUser = localStorage.getItem('portal_active_user');

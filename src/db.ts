@@ -20,6 +20,9 @@ import { syncSingleRecord, pushTeacherDataToCloud } from './firebase';
 export let isCloudSyncDisabled = false; // Enabled by default to ensure real-time synchronization between devices (e.g., PC and tablet)
 export function setCloudSyncDisabled(val: boolean) {
   isCloudSyncDisabled = val;
+  if (typeof window !== 'undefined') {
+    (window as any).isCloudSyncDisabled = val;
+  }
 }
 
 export class TeacherDatabase extends Dexie {
@@ -69,41 +72,50 @@ export class TeacherDatabase extends Dexie {
       const table = this.table(tableName);
 
       table.hook('creating', function(primKey, obj) {
-        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
-          localStorage.setItem('portal_has_unsaved_changes', 'true');
-          window.dispatchEvent(new Event('storage'));
+        if (isCloudSyncDisabled || (window as any).isCloudSyncDisabled || isSeeding) {
+          return;
         }
+        localStorage.setItem('portal_has_unsaved_changes', 'true');
+        window.dispatchEvent(new Event('storage'));
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+        if (activeUser) {
           this.onsuccess = function(actualKey) {
-            syncSingleRecord(activeUser, tableName, actualKey as any, obj, 'set');
+            if (!isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+              syncSingleRecord(activeUser, tableName, actualKey as any, obj, 'set');
+            }
           };
         }
       });
 
       table.hook('updating', (mods, primKey, obj) => {
-        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
-          localStorage.setItem('portal_has_unsaved_changes', 'true');
-          window.dispatchEvent(new Event('storage'));
+        if (isCloudSyncDisabled || (window as any).isCloudSyncDisabled || isSeeding) {
+          return;
         }
+        localStorage.setItem('portal_has_unsaved_changes', 'true');
+        window.dispatchEvent(new Event('storage'));
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+        if (activeUser) {
           const updatedObj = { ...obj, ...mods };
           setTimeout(() => {
-            syncSingleRecord(activeUser, tableName, primKey as any, updatedObj, 'set');
+            if (!isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+              syncSingleRecord(activeUser, tableName, primKey as any, updatedObj, 'set');
+            }
           }, 50);
         }
       });
 
       table.hook('deleting', (primKey) => {
-        if (!(window as any).isCloudSyncDisabled && !isSeeding) {
-          localStorage.setItem('portal_has_unsaved_changes', 'true');
-          window.dispatchEvent(new Event('storage'));
+        if (isCloudSyncDisabled || (window as any).isCloudSyncDisabled || isSeeding) {
+          return;
         }
+        localStorage.setItem('portal_has_unsaved_changes', 'true');
+        window.dispatchEvent(new Event('storage'));
         const activeUser = localStorage.getItem('portal_active_user');
-        if (activeUser && !isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+        if (activeUser) {
           setTimeout(() => {
-            syncSingleRecord(activeUser, tableName, primKey as any, null, 'delete');
+            if (!isCloudSyncDisabled && !(window as any).isCloudSyncDisabled) {
+              syncSingleRecord(activeUser, tableName, primKey as any, null, 'delete');
+            }
           }, 50);
         }
       });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, seedDatabase } from './db';
+import { db, seedDatabase, setCloudSyncDisabled } from './db';
 import HeaderFilters from './components/HeaderFilters';
 import TabAGrades from './components/TabA_Grades';
 import TabBVistos from './components/TabB_Vistos';
@@ -556,8 +556,9 @@ export default function App() {
     localStorage.removeItem('portal_initial_sync_done');
     localStorage.removeItem('portal_has_unsaved_changes');
     
-    // Clear IndexedDB local database tables on logout
+    // Clear IndexedDB local database tables on logout without firing cloud delete hooks
     try {
+      setCloudSyncDisabled(true);
       const tables = [
         'schools',
         'classes',
@@ -581,6 +582,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Error clearing database on logout:', err);
+    } finally {
+      setCloudSyncDisabled(false);
     }
 
     setSelectedProf(null);
@@ -680,30 +683,7 @@ export default function App() {
 
         // UNCONDITIONAL DATABASE RESTORE DURING LOGIN
         try {
-          // Clear all local tables to avoid merging with other teachers' cached records
-          const tables = [
-            'schools',
-            'classes',
-            'subjects',
-            'students',
-            'subjectWorkloads',
-            'weeklySchedule',
-            'bimonthlyGrades',
-            'assignmentDescriptions',
-            'lessons',
-            'attendance',
-            'vistoColumns',
-            'studentVistos',
-            'vistoRankingScores',
-            'extraGrades'
-          ];
-          for (const tableName of tables) {
-            if ((db as any)[tableName]) {
-              await (db as any)[tableName].clear();
-            }
-          }
-
-          // Pull fresh and verify success before seeding
+          // Pull fresh cloud data safely (pullTeacherDataFromCloud will only overwrite local DB if cloud fetch succeeds)
           const pullSuccess = await pullTeacherDataFromCloud(matchingProf.username, db);
           
           if (pullSuccess) {
@@ -717,7 +697,7 @@ export default function App() {
               await pushTeacherDataToCloud(matchingProf.username, db);
             }
           } else {
-            console.warn('Pull from cloud failed during login. Skipping automatic seed to prevent overwriting cloud data.');
+            console.warn('Pull from cloud failed during login. Keeping current local state.');
           }
         } catch (err) {
           console.error('Error restoring cloud data on login:', err);

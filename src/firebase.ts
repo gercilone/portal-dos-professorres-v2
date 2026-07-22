@@ -539,6 +539,12 @@ const TABLES_TO_SYNC = [
   'extraGrades'
 ];
 
+function setCloudSyncDisabled(val: boolean) {
+  if (typeof window !== 'undefined') {
+    (window as any).isCloudSyncDisabled = val;
+  }
+}
+
 // Pull all diary data from cloud for a specific professor and save to Dexie
 export async function pullTeacherDataFromCloud(username: string, dexieDb: any): Promise<boolean> {
   if (!username) return false;
@@ -554,9 +560,10 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   if (!dbInstance) return false;
 
   // Disable sync hooks globally so we don't trigger deletion / set actions on Dexie writes
-  (window as any).isCloudSyncDisabled = true;
+  setCloudSyncDisabled(true);
   try {
     const userLower = username.toLowerCase();
+    let hasFetchError = false;
     
     // Fetch all tables in parallel to make it extremely fast, wrapped in a 25-second timeout for mobile networks!
     const fetchAllPromise = Promise.all(
@@ -570,15 +577,49 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
             const id = isNaN(Number(doc.id)) ? doc.id : Number(doc.id);
             records.push({ ...data, id });
           });
-          return { tableName, records };
+          return { tableName, records, success: true };
         } catch (err) {
-          console.warn(`Could not pull table ${tableName}:`, err);
-          return { tableName, records: [] };
+          console.warn(`Could not pull table ${tableName} from cloud:`, err);
+          return { tableName, records: [], success: false };
         }
       })
     );
 
     const results = await withTimeout(fetchAllPromise, 25000);
+
+    for (const res of results) {
+      if (!res.success) {
+        hasFetchError = true;
+      }
+    }
+
+    if (hasFetchError) {
+      console.warn('One or more tables failed to fetch during cloud pull. Aborting local database update to prevent data loss.');
+      return false;
+    }
+
+    const totalCloudRecords = results.reduce((acc, r) => acc + r.records.length, 0);
+
+    let totalLocalRecords = 0;
+    try {
+      for (const tableName of TABLES_TO_SYNC) {
+        if (dexieDb[tableName]) {
+          const count = await dexieDb[tableName].count();
+          totalLocalRecords += count;
+        }
+      }
+    } catch (cErr) {
+      console.warn('Could not count local records:', cErr);
+    }
+
+    // If cloud has no data yet for this teacher, but local device has saved records:
+    // Automatically push local records to cloud so they are never lost!
+    if (totalCloudRecords === 0 && totalLocalRecords > 0) {
+      console.log('Cloud database is empty for this user, but local records exist. Pushing local records to cloud automatically...');
+      setCloudSyncDisabled(false);
+      await pushTeacherDataToCloud(username, dexieDb, true);
+      return true;
+    }
 
     for (const { tableName, records } of results) {
       if (dexieDb[tableName]) {
@@ -594,7 +635,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
     handleFirestoreError(error);
     return false;
   } finally {
-    (window as any).isCloudSyncDisabled = false;
+    setCloudSyncDisabled(false);
   }
 }
 
