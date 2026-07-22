@@ -3,8 +3,9 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { School, Class, Subject, sortClasses } from '../types';
 import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon, Save, Cloud, RefreshCw, Check, AlertCircle, Download, HardDrive } from 'lucide-react';
-import { pushTeacherDataToCloud, getGlobalStudents, getGlobalClasses } from '../firebase';
+import { pushTeacherDataToCloud, getGlobalStudents, getGlobalClasses, getGlobalWorkloads } from '../firebase';
 import { exportLocalBackup } from '../utils/backupUtils';
+import { normalizeName, deduplicateLocalDatabase } from '../utils/deduplicate';
 
 interface HeaderFiltersProps {
   selectedSchoolId: number | undefined;
@@ -79,34 +80,56 @@ export default function HeaderFilters({
     setSyncFeedbackMessage('Sincronizando dados com a nuvem...');
 
     try {
-      // 1. Fetch fresh global students and classes to pull any new student added by coordinator
-      setSyncFeedbackMessage('Buscando novos alunos da coordenação...');
-      const [freshGlobalStudents, freshGlobalClasses] = await Promise.all([
+      // 0. Deduplicate local database first to merge any stray duplicate classes or students
+      await deduplicateLocalDatabase(activeUser);
+
+      // 1. Fetch fresh global students, classes, and workloads from cloud
+      setSyncFeedbackMessage('Buscando novos alunos e dados da coordenação...');
+      const [freshGlobalStudents, freshGlobalClasses, freshGlobalWorkloads] = await Promise.all([
         getGlobalStudents(),
-        getGlobalClasses()
+        getGlobalClasses(),
+        getGlobalWorkloads()
       ]);
+
+      const activeUserLower = activeUser.toLowerCase();
+      const teacherWorkloads = freshGlobalWorkloads.filter(
+        w => w.teacherUsername && w.teacherUsername.toLowerCase() === activeUserLower
+      );
+      const assignedClassIds = new Set(teacherWorkloads.map(w => w.classId));
 
       const localClasses = await db.classes.toArray();
       let addedCount = 0;
 
-      for (const lc of localClasses) {
-        // Find matching global class by name
-        const matchingGlobalClass = freshGlobalClasses.find(
-          gc => gc.name.toLowerCase() === lc.name.toLowerCase()
-        );
+      for (const gc of freshGlobalClasses) {
+        // If teacher is assigned this global class or if a local class already matches its name
+        const hasLocalMatch = localClasses.some(lc => normalizeName(lc.name) === normalizeName(gc.name));
+        if (assignedClassIds.has(gc.id) || hasLocalMatch) {
+          let matchingLocalClass = localClasses.find(
+            lc => normalizeName(lc.name) === normalizeName(gc.name)
+          );
 
-        if (matchingGlobalClass) {
-          const classStudents = freshGlobalStudents.filter(st => st.classId === matchingGlobalClass.id);
-          const currentLocalStudents = await db.students.where({ classId: lc.id! }).toArray();
+          if (!matchingLocalClass) {
+            const localSchools = await db.schools.toArray();
+            let schoolId = localSchools[0]?.id;
+            if (!schoolId) {
+              schoolId = await db.schools.add({ name: 'Escola Oficial' });
+            }
+            const newClassId = await db.classes.add({ name: gc.name, schoolId });
+            matchingLocalClass = { id: newClassId, name: gc.name, schoolId };
+            localClasses.push(matchingLocalClass);
+          }
+
+          const classStudents = freshGlobalStudents.filter(st => st.classId === gc.id);
+          const currentLocalStudents = await db.students.where({ classId: matchingLocalClass.id! }).toArray();
 
           for (const st of classStudents) {
             const localStudent = currentLocalStudents.find(
-              localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
+              localSt => normalizeName(localSt.name) === normalizeName(st.name)
             );
 
             if (!localStudent) {
               await db.students.add({
-                classId: lc.id!,
+                classId: matchingLocalClass.id!,
                 name: st.name,
                 rollNumber: st.rollNumber,
                 active: st.active !== undefined ? st.active : true
@@ -126,7 +149,10 @@ export default function HeaderFilters({
         }
       }
 
-      // 2. Push all local data to cloud Firestore
+      // 2. Run deduplication again to guarantee clean, single-record state
+      await deduplicateLocalDatabase(activeUser);
+
+      // 3. Push clean local data to cloud Firestore
       setSyncFeedbackMessage('Gravando dados no servidor...');
       const success = await pushTeacherDataToCloud(activeUser, db, true);
       

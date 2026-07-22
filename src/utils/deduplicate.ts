@@ -10,6 +10,24 @@ import {
 } from '../firebase';
 import { School, Class, Student, Subject } from '../types';
 
+export function normalizeName(str: string | undefined | null): string {
+  if (!str) return '';
+  return str
+    .trim()
+    .toLowerCase()
+    .replace(/°/g, 'º')
+    .replace(/\s+/g, ' ');
+}
+
+export function pickBestGrade(val1: number | undefined | null, val2: number | undefined | null): number | undefined {
+  const has1 = val1 !== undefined && val1 !== null && !isNaN(Number(val1));
+  const has2 = val2 !== undefined && val2 !== null && !isNaN(Number(val2));
+  if (has1 && has2) return Math.max(Number(val1), Number(val2));
+  if (has1) return Number(val1);
+  if (has2) return Number(val2);
+  return undefined;
+}
+
 /**
  * Automatically merges any duplicate schools, classes, subjects, and students
  * inside the local Dexie database, updating all relationship pointers to the
@@ -45,7 +63,7 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
       const allSubjects = await db.subjects.toArray();
       const groupedSubjects: { [name: string]: Subject[] } = {};
       for (const subj of allSubjects) {
-        const normName = subj.name.trim().toLowerCase();
+        const normName = normalizeName(subj.name);
         if (!groupedSubjects[normName]) {
           groupedSubjects[normName] = [];
         }
@@ -89,6 +107,18 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
                 subjectId: keptSubjId
               }).first();
               if (existing) {
+                const mergedT1 = pickBestGrade(g.t1, existing.t1);
+                const mergedT2 = pickBestGrade(g.t2, existing.t2);
+                const mergedT3 = pickBestGrade(g.t3, existing.t3);
+                const mergedT4 = pickBestGrade(g.t4, existing.t4);
+                const mergedT5 = pickBestGrade(g.t5, existing.t5);
+                const mergedExam = pickBestGrade(g.exam, existing.exam);
+                const mergedRecovery = pickBestGrade(g.recovery, existing.recovery);
+
+                await db.bimonthlyGrades.update(existing.id!, {
+                  t1: mergedT1, t2: mergedT2, t3: mergedT3, t4: mergedT4, t5: mergedT5,
+                  exam: mergedExam, recovery: mergedRecovery
+                });
                 await db.bimonthlyGrades.delete(g.id!);
               } else {
                 await db.bimonthlyGrades.update(g.id!, { subjectId: keptSubjId });
@@ -151,6 +181,10 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
                 subjectId: keptSubjId
               }).first();
               if (existing) {
+                const mergedRec1 = pickBestGrade(ex.recSem1, existing.recSem1);
+                const mergedRec2 = pickBestGrade(ex.recSem2, existing.recSem2);
+                const mergedExam = pickBestGrade(ex.finalExam, existing.finalExam);
+                await db.extraGrades.update(existing.id!, { recSem1: mergedRec1, recSem2: mergedRec2, finalExam: mergedExam });
                 await db.extraGrades.delete(ex.id!);
               } else {
                 await db.extraGrades.update(ex.id!, { subjectId: keptSubjId });
@@ -170,7 +204,7 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
       const allSchools = await db.schools.toArray();
       const groupedSchools: { [name: string]: School[] } = {};
       for (const sch of allSchools) {
-        const normName = sch.name.trim().toLowerCase();
+        const normName = normalizeName(sch.name);
         if (!groupedSchools[normName]) {
           groupedSchools[normName] = [];
         }
@@ -208,12 +242,12 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
       }
 
       // ==========================================
-      // 3. DEDUPLICATE CLASSES (per school)
+      // 3. DEDUPLICATE CLASSES (by normalized name)
       // ==========================================
       const allClasses = await db.classes.toArray();
       const groupedClasses: { [key: string]: Class[] } = {};
       for (const cls of allClasses) {
-        const key = `${cls.schoolId}_${cls.name.trim().toLowerCase()}`;
+        const key = normalizeName(cls.name);
         if (!groupedClasses[key]) {
           groupedClasses[key] = [];
         }
@@ -290,7 +324,7 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
       const allStudents = await db.students.toArray();
       const groupedStudents: { [key: string]: Student[] } = {};
       for (const st of allStudents) {
-        const key = `${st.classId}_${st.name.trim().toLowerCase()}`;
+        const key = `${st.classId}_${normalizeName(st.name)}`;
         if (!groupedStudents[key]) {
           groupedStudents[key] = [];
         }
@@ -304,6 +338,12 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
           const keptStudent = list[0];
           const keptStudentId = keptStudent.id!;
 
+          // If ANY record has active === false, keep active: false for the merged student
+          const isDeactivated = list.some(s => s.active === false);
+          if (isDeactivated && keptStudent.active !== false) {
+            await db.students.update(keptStudentId, { active: false });
+          }
+
           for (let i = 1; i < list.length; i++) {
             const dupStudent = list[i];
             const dupStudentId = dupStudent.id!;
@@ -313,14 +353,13 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
             for (const g of gradesToMove) {
               const existingG = await db.bimonthlyGrades.where({ studentId: keptStudentId, bimonthly: g.bimonthly, subjectId: g.subjectId }).first();
               if (existingG) {
-                // Keep the better grade of the two
-                const mergedT1 = Math.max(g.t1 || 0, existingG.t1 || 0) || undefined;
-                const mergedT2 = Math.max(g.t2 || 0, existingG.t2 || 0) || undefined;
-                const mergedT3 = Math.max(g.t3 || 0, existingG.t3 || 0) || undefined;
-                const mergedT4 = Math.max(g.t4 || 0, existingG.t4 || 0) || undefined;
-                const mergedT5 = Math.max(g.t5 || 0, existingG.t5 || 0) || undefined;
-                const mergedExam = Math.max(g.exam || 0, existingG.exam || 0) || undefined;
-                const mergedRecovery = Math.max(g.recovery || 0, existingG.recovery || 0) || undefined;
+                const mergedT1 = pickBestGrade(g.t1, existingG.t1);
+                const mergedT2 = pickBestGrade(g.t2, existingG.t2);
+                const mergedT3 = pickBestGrade(g.t3, existingG.t3);
+                const mergedT4 = pickBestGrade(g.t4, existingG.t4);
+                const mergedT5 = pickBestGrade(g.t5, existingG.t5);
+                const mergedExam = pickBestGrade(g.exam, existingG.exam);
+                const mergedRecovery = pickBestGrade(g.recovery, existingG.recovery);
 
                 await db.bimonthlyGrades.update(existingG.id!, {
                   t1: mergedT1, t2: mergedT2, t3: mergedT3, t4: mergedT4, t5: mergedT5,
@@ -368,9 +407,9 @@ export async function deduplicateLocalDatabase(username: string): Promise<{
             for (const ex of extrasToMove) {
               const existingEx = await db.extraGrades.where({ studentId: keptStudentId, subjectId: ex.subjectId }).first();
               if (existingEx) {
-                const mergedRec1 = Math.max(ex.recSem1 || 0, existingEx.recSem1 || 0) || undefined;
-                const mergedRec2 = Math.max(ex.recSem2 || 0, existingEx.recSem2 || 0) || undefined;
-                const mergedExam = Math.max(ex.finalExam || 0, existingEx.finalExam || 0) || undefined;
+                const mergedRec1 = pickBestGrade(ex.recSem1, existingEx.recSem1);
+                const mergedRec2 = pickBestGrade(ex.recSem2, existingEx.recSem2);
+                const mergedExam = pickBestGrade(ex.finalExam, existingEx.finalExam);
                 await db.extraGrades.update(existingEx.id!, { recSem1: mergedRec1, recSem2: mergedRec2, finalExam: mergedExam });
                 await db.extraGrades.delete(ex.id!);
               } else {

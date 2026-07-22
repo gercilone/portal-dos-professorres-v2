@@ -1,7 +1,7 @@
 import { useState, useEffect, FormEvent, ChangeEvent, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
-import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/deduplicate';
+import { deduplicateLocalDatabase, deduplicateGlobalDatabase, normalizeName, pickBestGrade } from '../utils/deduplicate';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads, syncProfessorsListInCloud } from '../firebase';
@@ -401,8 +401,9 @@ export default function TabFSettings({
         return;
       }
 
-      // 2. Find or create local school in Dexie DB
-      let localSchool = schools.find(s => s.name.toLowerCase() === globalSchool.name.toLowerCase());
+      // 2. Query fresh local schools & classes directly from Dexie
+      const freshLocalSchools = await db.schools.toArray();
+      let localSchool = freshLocalSchools.find(s => normalizeName(s.name) === normalizeName(globalSchool.name));
       let localSchoolId: number;
       if (localSchool) {
         localSchoolId = localSchool.id!;
@@ -410,8 +411,9 @@ export default function TabFSettings({
         localSchoolId = await db.schools.add({ name: globalSchool.name });
       }
 
-      // 3. Find or create local class
-      let localClass = classes.find(c => c.name.toLowerCase() === cls.name.toLowerCase() && c.schoolId === localSchoolId);
+      // 3. Find or create local class matching by normalized name across local DB
+      const freshLocalClasses = await db.classes.toArray();
+      let localClass = freshLocalClasses.find(c => normalizeName(c.name) === normalizeName(cls.name));
       let localClassId: number;
       if (localClass) {
         localClassId = localClass.id!;
@@ -424,7 +426,7 @@ export default function TabFSettings({
       setGlobalStudents(freshGlobalStudents);
       const classStudents = freshGlobalStudents.filter(st => st.classId === cls.id);
 
-      // 5. Add them to the local database, preventing duplicates by name
+      // 5. Add/update students in local DB using normalized name comparison
       let addedCount = 0;
       let skippedCount = 0;
 
@@ -432,7 +434,7 @@ export default function TabFSettings({
 
       for (const st of classStudents) {
         const localStudent = currentLocalStudents.find(
-          localSt => localSt.name.toLowerCase() === st.name.toLowerCase()
+          localSt => normalizeName(localSt.name) === normalizeName(st.name)
         );
 
         if (!localStudent) {
@@ -510,8 +512,9 @@ export default function TabFSettings({
         importedWorkloadsCount++;
       }
 
-      // Force push teacher data to cloud
+      // Deduplicate and push teacher data to cloud
       if (activeUser) {
+        await deduplicateLocalDatabase(activeUser);
         await pushTeacherDataToCloud(activeUser, db);
       }
 
@@ -1326,110 +1329,160 @@ export default function TabFSettings({
               }
               const mapSubjectId = (oldId: any) => subjectIdMap.get(Number(oldId)) || Number(oldId);
 
-              // 3. Excluir dados da turma de mesmo nome se já existir nesta escola
-              const existingClass = await db.classes.where({ name: className, schoolId: targetSchoolId }).first();
-              if (existingClass && existingClass.id) {
-                const classIdToClear = existingClass.id;
-                const oldStudents = await db.students.where({ classId: classIdToClear }).toArray();
-                const oldStudentIds = oldStudents.map(s => s.id).filter((id): id is number => id !== undefined);
-
-                await db.transaction('rw', [
-                  db.students, db.subjectWorkloads, db.weeklySchedule, db.bimonthlyGrades,
-                  db.assignmentDescriptions, db.lessons, db.attendance, db.vistoColumns,
-                  db.studentVistos, db.vistoRankingScores, db.extraGrades, db.classes
-                ], async () => {
-                  if (oldStudentIds.length > 0) {
-                    await db.students.where('classId').equals(classIdToClear).delete();
-                    await db.bimonthlyGrades.where('studentId').anyOf(oldStudentIds).delete();
-                    await db.attendance.where('studentId').anyOf(oldStudentIds).delete();
-                    await db.studentVistos.where('studentId').anyOf(oldStudentIds).delete();
-                    await db.vistoRankingScores.where('studentId').anyOf(oldStudentIds).delete();
-                    await db.extraGrades.where('studentId').anyOf(oldStudentIds).delete();
-                  }
-                  await db.subjectWorkloads.where('classId').equals(classIdToClear).delete();
-                  await db.weeklySchedule.where('classId').equals(classIdToClear).delete();
-                  await db.assignmentDescriptions.where('classId').equals(classIdToClear).delete();
-                  await db.lessons.where('classId').equals(classIdToClear).delete();
-                  
-                  const vCols = await db.vistoColumns.where('classId').equals(classIdToClear).toArray();
-                  const vColIds = vCols.map(vc => vc.id).filter((id): id is number => id !== undefined);
-                  if (vColIds.length > 0) {
-                    await db.studentVistos.where('vistoColumnId').anyOf(vColIds).delete();
-                  }
-                  await db.vistoColumns.where('classId').equals(classIdToClear).delete();
-                  await db.classes.delete(classIdToClear);
-                });
+              // 3. Encontrar ou reaproveitar turma de mesmo nome sem apagar dados locais
+              const freshClasses = await db.classes.toArray();
+              let targetClass = freshClasses.find(c => normalizeName(c.name) === normalizeName(className));
+              let newClassId: number;
+              if (targetClass) {
+                newClassId = targetClass.id!;
+              } else {
+                newClassId = await db.classes.add({ name: className, schoolId: targetSchoolId });
               }
 
-              // 4. Inserir nova turma
-              const newClassId = await db.classes.add({ name: className, schoolId: targetSchoolId });
-
-              // 5. Inserir alunos e mapear IDs antigos para os novos
+              // 4. Inserir ou atualizar alunos mapeando IDs sem apagar as notas existentes
               const studentIdMap = new Map<number, number>();
+              const existingLocalStudents = await db.students.where({ classId: newClassId }).toArray();
+
               if (data.students && Array.isArray(data.students)) {
                 for (const stud of data.students) {
-                  const newId = await db.students.add({
-                    name: stud.name,
-                    rollNumber: Number(stud.rollNumber),
-                    classId: newClassId
-                  });
+                  const localSt = existingLocalStudents.find(
+                    ls => normalizeName(ls.name) === normalizeName(stud.name)
+                  );
+                  let localStId: number;
+
+                  if (localSt) {
+                    localStId = localSt.id!;
+                    const newActive = stud.active !== false;
+                    const roll = Number(stud.rollNumber || 1);
+                    if (localSt.active !== newActive || localSt.rollNumber !== roll) {
+                      await db.students.update(localStId, {
+                        rollNumber: roll,
+                        active: newActive
+                      });
+                    }
+                  } else {
+                    localStId = await db.students.add({
+                      name: stud.name,
+                      rollNumber: Number(stud.rollNumber || 1),
+                      classId: newClassId,
+                      active: stud.active !== false
+                    });
+                  }
+
                   if (stud.id) {
-                    studentIdMap.set(Number(stud.id), newId);
+                    studentIdMap.set(Number(stud.id), localStId);
                   }
                 }
               }
               const mapStudentId = (oldId: any) => studentIdMap.get(Number(oldId));
 
-              // 6. Inserir colunas de vistos e mapear seus IDs
+              // 5. Inserir ou reaproveitar colunas de vistos
               const vistoColIdMap = new Map<number, number>();
               if (data.vistoColumns && Array.isArray(data.vistoColumns)) {
                 for (const vc of data.vistoColumns) {
-                  const newId = await db.vistoColumns.add({
+                  const mappedSubjId = mapSubjectId(vc.subjectId);
+                  const existingVCol = await db.vistoColumns.where({
                     classId: newClassId,
-                    subjectId: mapSubjectId(vc.subjectId),
+                    subjectId: mappedSubjId,
                     bimonthly: Number(vc.bimonthly || 1),
-                    date: vc.date,
-                    title: vc.title || 'Visto'
-                  });
+                    date: vc.date
+                  }).first();
+
+                  let vColId: number;
+                  if (existingVCol) {
+                    vColId = existingVCol.id!;
+                  } else {
+                    vColId = await db.vistoColumns.add({
+                      classId: newClassId,
+                      subjectId: mappedSubjId,
+                      bimonthly: Number(vc.bimonthly || 1),
+                      date: vc.date,
+                      title: vc.title || 'Visto'
+                    });
+                  }
                   if (vc.id) {
-                    vistoColIdMap.set(Number(vc.id), newId);
+                    vistoColIdMap.set(Number(vc.id), vColId);
                   }
                 }
               }
               const mapVistoColId = (oldId: any) => vistoColIdMap.get(Number(oldId));
 
-              // 7. Inserir cargas horárias (subjectWorkloads)
+              // 6. Cargas horárias (subjectWorkloads)
               if (data.subjectWorkloads && Array.isArray(data.subjectWorkloads)) {
-                const workloadsToInsert = data.subjectWorkloads.map((sw: any) => ({
-                  classId: newClassId,
-                  subjectId: mapSubjectId(sw.subjectId),
-                  totalLessons: Number(sw.totalLessons || 40)
-                }));
-                if (workloadsToInsert.length > 0) await db.subjectWorkloads.bulkAdd(workloadsToInsert);
+                for (const sw of data.subjectWorkloads) {
+                  const mappedSubjId = mapSubjectId(sw.subjectId);
+                  const existingWl = await db.subjectWorkloads.where({
+                    classId: newClassId,
+                    subjectId: mappedSubjId
+                  }).first();
+                  if (existingWl) {
+                    await db.subjectWorkloads.update(existingWl.id!, {
+                      totalLessons: Number(sw.totalLessons || 40)
+                    });
+                  } else {
+                    await db.subjectWorkloads.add({
+                      classId: newClassId,
+                      subjectId: mappedSubjId,
+                      totalLessons: Number(sw.totalLessons || 40)
+                    });
+                  }
+                }
               }
 
-              // 8. Inserir quadro de horários (weeklySchedule)
+              // 7. Quadro de horários (weeklySchedule)
               if (data.weeklySchedule && Array.isArray(data.weeklySchedule)) {
-                const schedulesToInsert = data.weeklySchedule.map((ws: any) => ({
-                  dayOfWeek: Number(ws.dayOfWeek),
-                  timeSlot: ws.timeSlot,
-                  schoolId: targetSchoolId,
-                  classId: newClassId,
-                  subjectId: mapSubjectId(ws.subjectId)
-                }));
-                if (schedulesToInsert.length > 0) await db.weeklySchedule.bulkAdd(schedulesToInsert);
+                for (const ws of data.weeklySchedule) {
+                  const mappedSubjId = mapSubjectId(ws.subjectId);
+                  const existingWs = await db.weeklySchedule.where({
+                    schoolId: targetSchoolId,
+                    classId: newClassId,
+                    dayOfWeek: Number(ws.dayOfWeek),
+                    timeSlot: ws.timeSlot
+                  }).first();
+                  if (!existingWs) {
+                    await db.weeklySchedule.add({
+                      dayOfWeek: Number(ws.dayOfWeek),
+                      timeSlot: ws.timeSlot,
+                      schoolId: targetSchoolId,
+                      classId: newClassId,
+                      subjectId: mappedSubjId
+                    });
+                  }
+                }
               }
 
-              // 9. Inserir notas bimestrais (bimonthlyGrades)
+              // 8. Notas bimestrais (bimonthlyGrades)
               if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
-                const gradesToInsert = data.bimonthlyGrades
-                  .map((bg: any) => {
-                    const newStudId = mapStudentId(bg.studentId);
-                    if (!newStudId) return null;
-                    return {
+                for (const bg of data.bimonthlyGrades) {
+                  const newStudId = mapStudentId(bg.studentId);
+                  if (!newStudId) continue;
+                  const mappedSubjId = mapSubjectId(bg.subjectId);
+                  const bimVal = Number(bg.bimonthly || bg.bimonth || 1);
+
+                  const existingG = await db.bimonthlyGrades.where({
+                    studentId: newStudId,
+                    subjectId: mappedSubjId,
+                    bimonthly: bimVal
+                  }).first();
+
+                  if (existingG) {
+                    const mergedT1 = pickBestGrade(existingG.t1, bg.t1);
+                    const mergedT2 = pickBestGrade(existingG.t2, bg.t2);
+                    const mergedT3 = pickBestGrade(existingG.t3, bg.t3);
+                    const mergedT4 = pickBestGrade(existingG.t4, bg.t4);
+                    const mergedT5 = pickBestGrade(existingG.t5, bg.t5);
+                    const mergedExam = pickBestGrade(existingG.exam, bg.exam);
+                    const mergedRecovery = pickBestGrade(existingG.recovery, bg.recovery);
+
+                    await db.bimonthlyGrades.update(existingG.id!, {
+                      t1: mergedT1, t2: mergedT2, t3: mergedT3, t4: mergedT4, t5: mergedT5,
+                      exam: mergedExam, recovery: mergedRecovery
+                    });
+                  } else {
+                    await db.bimonthlyGrades.add({
                       studentId: newStudId,
-                      bimonthly: Number(bg.bimonthly || bg.bimonth || 1),
-                      subjectId: mapSubjectId(bg.subjectId),
+                      bimonthly: bimVal,
+                      subjectId: mappedSubjId,
                       t1: bg.t1 !== undefined && bg.t1 !== null ? Number(bg.t1) : undefined,
                       t2: bg.t2 !== undefined && bg.t2 !== null ? Number(bg.t2) : undefined,
                       t3: bg.t3 !== undefined && bg.t3 !== null ? Number(bg.t3) : undefined,
@@ -1437,117 +1490,171 @@ export default function TabFSettings({
                       t5: bg.t5 !== undefined && bg.t5 !== null ? Number(bg.t5) : undefined,
                       exam: bg.exam !== undefined && bg.exam !== null ? Number(bg.exam) : undefined,
                       recovery: bg.recovery !== undefined && bg.recovery !== null ? Number(bg.recovery) : undefined
-                    };
-                  })
-                  .filter(Boolean) as any[];
-                if (gradesToInsert.length > 0) await db.bimonthlyGrades.bulkAdd(gradesToInsert);
+                    });
+                  }
+                }
               }
 
-              // 10. Inserir descrições de trabalhos (assignmentDescriptions)
+              // 9. Descrições de trabalhos (assignmentDescriptions)
               if (data.assignmentDescriptions && Array.isArray(data.assignmentDescriptions)) {
-                const descsToInsert = data.assignmentDescriptions.map((ad: any) => ({
-                  classId: newClassId,
-                  subjectId: mapSubjectId(ad.subjectId),
-                  bimonthly: Number(ad.bimonthly || ad.bimonth || 1),
-                  t1: ad.t1,
-                  t2: ad.t2,
-                  t3: ad.t3,
-                  t4: ad.t4,
-                  t5: ad.t5
-                }));
-                if (descsToInsert.length > 0) await db.assignmentDescriptions.bulkAdd(descsToInsert);
+                for (const ad of data.assignmentDescriptions) {
+                  const mappedSubjId = mapSubjectId(ad.subjectId);
+                  const bimVal = Number(ad.bimonthly || ad.bimonth || 1);
+                  const existingAd = await db.assignmentDescriptions.where({
+                    classId: newClassId,
+                    subjectId: mappedSubjId,
+                    bimonthly: bimVal
+                  }).first();
+
+                  if (existingAd) {
+                    await db.assignmentDescriptions.update(existingAd.id!, {
+                      t1: ad.t1 || existingAd.t1,
+                      t2: ad.t2 || existingAd.t2,
+                      t3: ad.t3 || existingAd.t3,
+                      t4: ad.t4 || existingAd.t4,
+                      t5: ad.t5 || existingAd.t5
+                    });
+                  } else {
+                    await db.assignmentDescriptions.add({
+                      classId: newClassId,
+                      subjectId: mappedSubjId,
+                      bimonthly: bimVal,
+                      t1: ad.t1, t2: ad.t2, t3: ad.t3, t4: ad.t4, t5: ad.t5
+                    });
+                  }
+                }
               }
 
-              // 11. Inserir diários de aulas (lessons)
+              // 10. Diários de aulas (lessons)
               if (data.lessons && Array.isArray(data.lessons)) {
-                const lessonsToInsert = data.lessons.map((ls: any) => ({
-                  classId: newClassId,
-                  subjectId: mapSubjectId(ls.subjectId),
-                  date: ls.date,
-                  bimonthly: Number(ls.bimonthly || 1),
-                  lessonCount: Number(ls.lessonCount || 1),
-                  content: ls.content || ''
-                }));
-                if (lessonsToInsert.length > 0) await db.lessons.bulkAdd(lessonsToInsert);
+                for (const ls of data.lessons) {
+                  const mappedSubjId = mapSubjectId(ls.subjectId);
+                  const existingLs = await db.lessons.where({
+                    classId: newClassId,
+                    subjectId: mappedSubjId,
+                    date: ls.date
+                  }).first();
+
+                  if (!existingLs) {
+                    await db.lessons.add({
+                      classId: newClassId,
+                      subjectId: mappedSubjId,
+                      date: ls.date,
+                      bimonthly: Number(ls.bimonthly || 1),
+                      lessonCount: Number(ls.lessonCount || 1),
+                      content: ls.content || ''
+                    });
+                  }
+                }
               }
 
-              // 12. Inserir frequências/presenças (attendance)
+              // 11. Frequências/presenças (attendance)
               if (data.attendance && Array.isArray(data.attendance)) {
-                const attToInsert = data.attendance
-                  .map((at: any) => {
-                    const newStudId = mapStudentId(at.studentId);
-                    if (!newStudId) return null;
-                    return {
+                for (const at of data.attendance) {
+                  const newStudId = mapStudentId(at.studentId);
+                  if (!newStudId) continue;
+                  const mappedSubjId = mapSubjectId(at.subjectId);
+                  const existingAtt = await db.attendance.where({
+                    studentId: newStudId,
+                    subjectId: mappedSubjId,
+                    date: at.date
+                  }).first();
+
+                  if (existingAtt) {
+                    await db.attendance.update(existingAtt.id!, {
+                      absences: Math.max(existingAtt.absences, Number(at.absences || 0))
+                    });
+                  } else {
+                    await db.attendance.add({
                       studentId: newStudId,
                       date: at.date,
-                      subjectId: mapSubjectId(at.subjectId),
+                      subjectId: mappedSubjId,
                       bimonthly: Number(at.bimonthly || 1),
                       absences: Number(at.absences || 0)
-                    };
-                  })
-                  .filter(Boolean) as any[];
-                if (attToInsert.length > 0) await db.attendance.bulkAdd(attToInsert);
+                    });
+                  }
+                }
               }
 
-              // 13. Inserir vistos individuais (studentVistos)
+              // 12. Vistos individuais (studentVistos)
               if (data.studentVistos && Array.isArray(data.studentVistos)) {
-                const vistosToInsert = data.studentVistos
-                  .map((sv: any) => {
-                    const newStudId = mapStudentId(sv.studentId);
-                    const newVColId = mapVistoColId(sv.vistoColumnId);
-                    if (!newStudId || !newVColId) return null;
-                    return {
+                for (const sv of data.studentVistos) {
+                  const newStudId = mapStudentId(sv.studentId);
+                  const newVColId = mapVistoColId(sv.vistoColumnId);
+                  if (!newStudId || !newVColId) continue;
+                  const existingSv = await db.studentVistos.where({
+                    studentId: newStudId,
+                    vistoColumnId: newVColId
+                  }).first();
+
+                  if (existingSv) {
+                    await db.studentVistos.update(existingSv.id!, {
+                      checked: Boolean(sv.checked || existingSv.checked)
+                    });
+                  } else {
+                    await db.studentVistos.add({
                       studentId: newStudId,
                       vistoColumnId: newVColId,
                       checked: Boolean(sv.checked)
-                    };
-                  })
-                  .filter(Boolean) as any[];
-                if (vistosToInsert.length > 0) await db.studentVistos.bulkAdd(vistosToInsert);
+                    });
+                  }
+                }
               }
 
-              // 14. Inserir pontuações do ranking (vistoRankingScores)
+              // 13. Pontuações do ranking (vistoRankingScores)
               if (data.vistoRankingScores && Array.isArray(data.vistoRankingScores)) {
-                const scoresToInsert = data.vistoRankingScores
-                  .map((vrs: any) => {
-                    const newStudId = mapStudentId(vrs.studentId);
-                    if (!newStudId) return null;
-                    return {
-                      studentId: newStudId,
-                      subjectId: mapSubjectId(vrs.subjectId),
-                      bimonthly: Number(vrs.bimonthly || 1),
-                      type: vrs.type || 'visto',
-                      points: Number(vrs.points || 0),
-                      reason: vrs.reason || '',
-                      timestamp: Number(vrs.timestamp || Date.now())
-                    };
-                  })
-                  .filter(Boolean) as any[];
-                if (scoresToInsert.length > 0) await db.vistoRankingScores.bulkAdd(scoresToInsert);
+                for (const vrs of data.vistoRankingScores) {
+                  const newStudId = mapStudentId(vrs.studentId);
+                  if (!newStudId) continue;
+                  await db.vistoRankingScores.add({
+                    studentId: newStudId,
+                    subjectId: mapSubjectId(vrs.subjectId),
+                    bimonthly: Number(vrs.bimonthly || 1),
+                    type: vrs.type || 'visto',
+                    points: Number(vrs.points || 0),
+                    reason: vrs.reason || '',
+                    timestamp: Number(vrs.timestamp || Date.now())
+                  });
+                }
               }
 
-              // 15. Inserir notas extras / recuperações semestrais (extraGrades)
+              // 14. Notas extras / recuperações semestrais (extraGrades)
               if (data.extraGrades && Array.isArray(data.extraGrades)) {
-                const extraToInsert = data.extraGrades
-                  .map((eg: any) => {
-                    const newStudId = mapStudentId(eg.studentId);
-                    if (!newStudId) return null;
-                    return {
+                for (const eg of data.extraGrades) {
+                  const newStudId = mapStudentId(eg.studentId);
+                  if (!newStudId) continue;
+                  const mappedSubjId = mapSubjectId(eg.subjectId);
+                  const existingEg = await db.extraGrades.where({
+                    studentId: newStudId,
+                    subjectId: mappedSubjId
+                  }).first();
+
+                  if (existingEg) {
+                    const mergedRec1 = pickBestGrade(existingEg.recSem1, eg.recSem1);
+                    const mergedRec2 = pickBestGrade(existingEg.recSem2, eg.recSem2);
+                    const mergedExam = pickBestGrade(existingEg.finalExam, eg.finalExam);
+                    await db.extraGrades.update(existingEg.id!, {
+                      recSem1: mergedRec1,
+                      recSem2: mergedRec2,
+                      finalExam: mergedExam
+                    });
+                  } else {
+                    await db.extraGrades.add({
                       studentId: newStudId,
-                      subjectId: mapSubjectId(eg.subjectId),
+                      subjectId: mappedSubjId,
                       recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
                       recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
                       finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined
-                    };
-                  })
-                  .filter(Boolean) as any[];
-                if (extraToInsert.length > 0) await db.extraGrades.bulkAdd(extraToInsert);
+                    });
+                  }
+                }
               }
 
-              // Sincronizar as alterações locais com a nuvem (Firestore)
+              // Deduplicar e sincronizar as alterações locais com a nuvem (Firestore)
               const activeUser = localStorage.getItem('portal_active_user');
               if (activeUser) {
                 try {
+                  await deduplicateLocalDatabase(activeUser);
                   await pushTeacherDataToCloud(activeUser, db);
                 } catch (cloudErr) {
                   console.error('Failed to auto-sync imported class data to Cloud Firestore:', cloudErr);
