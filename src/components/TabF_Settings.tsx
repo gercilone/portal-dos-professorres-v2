@@ -1,4 +1,4 @@
-import { useState, FormEvent, ChangeEvent, useMemo } from 'react';
+import { useState, useEffect, FormEvent, ChangeEvent, useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/deduplicate';
