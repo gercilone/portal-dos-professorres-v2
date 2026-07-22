@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { School, Class, Subject, sortClasses } from '../types';
-import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon, Save, Cloud, RefreshCw, Check, AlertCircle } from 'lucide-react';
+import { School as SchoolIcon, Layers, BookOpen, CalendarDays, LogOut, Sun, Moon, Save, Cloud, RefreshCw, Check, AlertCircle, Download, HardDrive } from 'lucide-react';
 import { pushTeacherDataToCloud, getGlobalStudents, getGlobalClasses } from '../firebase';
+import { exportLocalBackup } from '../utils/backupUtils';
 
 interface HeaderFiltersProps {
   selectedSchoolId: number | undefined;
@@ -159,6 +160,27 @@ export default function HeaderFilters({
     }
   };
 
+  const [isExportingLocal, setIsExportingLocal] = useState(false);
+  const [localExportSuccess, setLocalExportSuccess] = useState(false);
+
+  const handleLocalBackup = async () => {
+    setIsExportingLocal(true);
+    try {
+      await exportLocalBackup(teacherName);
+      setLocalExportSuccess(true);
+      setTimeout(() => setLocalExportSuccess(false), 3000);
+    } catch (err) {
+      console.error('Error exporting local backup:', err);
+    } finally {
+      setIsExportingLocal(false);
+    }
+  };
+
+  const handleSaveBoth = async () => {
+    await handleLocalBackup();
+    await handleManualSave();
+  };
+
   const handleSchoolClick = (schoolId: number) => {
     setSelectedSchoolId(schoolId);
     setSelectedClassId(undefined); // Reset class selection
@@ -232,12 +254,12 @@ export default function HeaderFilters({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
-            {/* Direct Save Button */}
+            {/* 1. Cloud Save Button */}
             <button
               id="header-manual-save-btn"
               onClick={handleManualSave}
               disabled={isSavingCloud}
-              className={`flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-xl transition duration-200 select-none cursor-pointer border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition duration-200 select-none cursor-pointer border ${
                 saveSuccess === true
                   ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
                   : saveSuccess === false
@@ -246,7 +268,7 @@ export default function HeaderFilters({
                   ? 'bg-amber-600 hover:bg-amber-500 border-amber-500/40 text-white animate-pulse shadow shadow-amber-500/20'
                   : 'bg-blue-600 hover:bg-blue-500 border-blue-500/30 text-white shadow shadow-blue-500/10'
               }`}
-              title="Salvar todas as alterações na Nuvem (Notas, Chamadas, Vistos, etc.) e buscar novos alunos da coordenação"
+              title="Sincronizar alterações na Nuvem (Firebase)"
             >
               {isSavingCloud ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
@@ -263,11 +285,43 @@ export default function HeaderFilters({
                   : saveSuccess === true
                   ? 'Salvo!'
                   : saveSuccess === false
-                  ? 'Erro ao Salvar'
-                  : hasUnsavedChanges
-                  ? 'Salvar Alterações'
-                  : 'Salvar Diário'}
+                  ? 'Erro'
+                  : 'Salvar na Nuvem'}
               </span>
+            </button>
+
+            {/* 2. Local Backup Button */}
+            <button
+              id="header-local-backup-btn"
+              onClick={handleLocalBackup}
+              disabled={isExportingLocal}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition duration-200 select-none cursor-pointer border ${
+                localExportSuccess
+                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                  : 'bg-zinc-800 hover:bg-zinc-700 border-zinc-700 text-zinc-200 shadow'
+              }`}
+              title="Baixar cópia de segurança em arquivo .json direto no computador"
+            >
+              {isExportingLocal ? (
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+              ) : localExportSuccess ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span>{localExportSuccess ? 'Baixado!' : 'Backup Local (.json)'}</span>
+            </button>
+
+            {/* 3. Dual Save (Nuvem + Local) */}
+            <button
+              id="header-dual-save-btn"
+              onClick={handleSaveBoth}
+              disabled={isSavingCloud || isExportingLocal}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition duration-200 select-none cursor-pointer border bg-purple-600 hover:bg-purple-500 border-purple-500/40 text-white shadow shadow-purple-500/20"
+              title="Salvar na nuvem e baixar o backup local simultaneamente no computador"
+            >
+              <HardDrive className="w-3.5 h-3.5 text-purple-200" />
+              <span>Nuvem + Local</span>
             </button>
 
             {setFontSize && (

@@ -5,6 +5,7 @@ import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/de
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
 import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads, syncProfessorsListInCloud } from '../firebase';
+import { exportLocalBackup } from '../utils/backupUtils';
 
 export function getSchoolColorClasses(schoolId: number | undefined) {
   if (!schoolId) {
@@ -1144,41 +1145,7 @@ export default function TabFSettings({
   // BACKUP EXPORT
   const handleExportBackup = async () => {
     try {
-      const data = {
-        type: 'full_portal_backup_v2',
-        meta: {
-          activeUser: localStorage.getItem('portal_active_user'),
-          activeUserDb: localStorage.getItem('portal_active_user_db'),
-          teacherName: localStorage.getItem('portal_teacher_name'),
-          username: localStorage.getItem('portal_username'),
-          authEnabled: localStorage.getItem('portal_auth_enabled'),
-          professorsList: localStorage.getItem('portal_professors_list'),
-          coordinatorsList: localStorage.getItem('portal_coordinators_list'),
-        },
-        schools: await db.schools.toArray(),
-        classes: await db.classes.toArray(),
-        subjects: await db.subjects.toArray(),
-        students: await db.students.toArray(),
-        subjectWorkloads: await db.subjectWorkloads.toArray(),
-        weeklySchedule: await db.weeklySchedule.toArray(),
-        bimonthlyGrades: await db.bimonthlyGrades.toArray(),
-        assignmentDescriptions: await db.assignmentDescriptions.toArray(),
-        lessons: await db.lessons.toArray(),
-        attendance: await db.attendance.toArray(),
-        vistoColumns: await db.vistoColumns.toArray(),
-        studentVistos: await db.studentVistos.toArray(),
-        vistoRankingScores: await db.vistoRankingScores.toArray(),
-        extraGrades: await db.extraGrades.toArray()
-      };
-
-      const jsonStr = JSON.stringify(data, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `backup_portal_professor_${new Date().toISOString().split('T')[0]}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
+      await exportLocalBackup(profileName || teacherName);
     } catch (err) {
       console.error('Backup export failed:', err);
       setAlertDialog({
@@ -3559,75 +3526,7 @@ export default function TabFSettings({
             </div>
           </div>
 
-          {/* EXPORTAR E RESTAURAR POR TURMA */}
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
-            <h3 className="text-white font-bold text-sm flex items-center gap-2">
-              <Users className="w-5 h-5 text-purple-400" /> Exportação e Restauração de Diários por Turma
-            </h3>
-            <p className="text-xs text-zinc-400 leading-relaxed">
-              Deseja exportar ou restaurar apenas uma turma específica? Esta ferramenta permite isolar todo o trabalho (alunos, notas, presenças, diários de aula e vistos) de uma única turma em um arquivo JSON. Excelente para compartilhar com outros professores ou restaurar turmas seletivamente sem afetar as demais.
-            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-800/80">
-              {/* SELETOR E EXPORTADOR */}
-              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
-                <div className="flex items-center gap-2 text-purple-400">
-                  <Download className="w-4 h-4" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider">Exportar Turma Selecionada</h4>
-                </div>
-                <p className="text-[11px] text-zinc-500">Selecione uma turma para gerar o arquivo de diário e notas específico dela.</p>
-                
-                <div className="space-y-2">
-                  <select
-                    value={selectedClassIdForExport || ''}
-                    onChange={(e) => setSelectedClassIdForExport(e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full bg-zinc-900 border border-zinc-850 text-zinc-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  >
-                    <option value="">-- Selecione uma Turma --</option>
-                    {[...classes].sort(sortClasses).map((cl) => {
-                      const sch = schools.find((s) => s.id === cl.schoolId);
-                      return (
-                        <option key={cl.id} value={cl.id}>
-                          {cl.name} {sch ? `(${sch.name})` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-
-                  <button
-                    type="button"
-                    disabled={!selectedClassIdForExport}
-                    onClick={() => selectedClassIdForExport && handleExportClassBackup(selectedClassIdForExport)}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer text-center"
-                  >
-                    <Download className="w-4 h-4" /> Baixar Dados da Turma (.json)
-                  </button>
-                </div>
-              </div>
-
-              {/* IMPORTADOR SELETIVO */}
-              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
-                <div className="flex items-center gap-2 text-emerald-400">
-                  <Upload className="w-4 h-4" />
-                  <h4 className="text-xs font-bold uppercase tracking-wider">Restaurar / Importar Turma</h4>
-                </div>
-                <p className="text-[11px] text-zinc-500">
-                  Importa o backup de uma única turma. Se já existir uma turma de mesmo nome nesta escola, ela será substituída com seus dados. Outras turmas permanecem intactas.
-                </p>
-                
-                <label className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
-                  <Upload className="w-4 h-4" />
-                  <span>Selecionar Arquivo da Turma</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportClassBackup}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
 
           {/* Sincronização em Nuvem (Firebase Firestore) */}
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
