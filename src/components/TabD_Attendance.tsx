@@ -112,7 +112,7 @@ export default function TabDAttendance({
   }, [subjectId, selectedDate]) || [];
 
   // Export Entire Bimester Attendance to CSV
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
     if (!schoolId || !classId || !subjectId) return;
 
     const sch = schools.find(s => s.id === schoolId);
@@ -178,12 +178,35 @@ export default function TabDAttendance({
     });
 
     const csvContent = '\uFEFF' + csvRows.join('\r\n'); // Add UTF-8 BOM for Excel compatibility
+    const sanitizedFileName = `diario_chamada_${className}_${subjectName}_${bimonthly}b`.toLowerCase().replace(/\s+/g, '_');
+    const fileName = `${sanitizedFileName}.csv`;
+
+    if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: 'Planilha CSV',
+              accept: { 'text/csv': ['.csv'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(csvContent);
+        await writable.close();
+        return;
+      } catch (pickerErr: any) {
+        if (pickerErr?.name === 'AbortError') return;
+        console.warn('showSaveFilePicker failed, falling back to download link:', pickerErr);
+      }
+    }
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    const sanitizedFileName = `diario_chamada_${className}_${subjectName}_${bimonthly}b`.toLowerCase().replace(/\s+/g, '_');
-    link.download = `${sanitizedFileName}.csv`;
+    link.download = fileName;
     link.click();
     URL.revokeObjectURL(url);
   };

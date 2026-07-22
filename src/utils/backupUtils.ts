@@ -45,6 +45,35 @@ export async function exportLocalBackup(overrideTeacherName?: string): Promise<s
   const fileName = `backup_${sanitizedTeacher}_${day}-${month}-${year}_${hours}h${minutes}.json`;
 
   const jsonStr = JSON.stringify(data, null, 2);
+
+  // Try modern File System Access API (showSaveFilePicker) if supported by browser
+  if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName: fileName,
+        types: [
+          {
+            description: 'Arquivo de Backup JSON',
+            accept: {
+              'application/json': ['.json'],
+            },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(jsonStr);
+      await writable.close();
+      return handle.name || fileName;
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        // User canceled the save dialog
+        return 'CANCELED';
+      }
+      console.warn('showSaveFilePicker failed, falling back to traditional download link:', err);
+    }
+  }
+
+  // Fallback to standard <a> download link
   const blob = new Blob([jsonStr], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

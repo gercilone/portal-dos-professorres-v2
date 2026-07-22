@@ -1226,13 +1226,35 @@ export default function TabFSettings({
       };
 
       const jsonStr = JSON.stringify(data, null, 2);
+      const sanitizedClassName = classObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const fileName = `backup_turma_${sanitizedClassName}_${new Date().toISOString().split('T')[0]}.json`;
+
+      if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+            types: [
+              {
+                description: 'Arquivo de Backup JSON',
+                accept: { 'application/json': ['.json'] },
+              },
+            ],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(jsonStr);
+          await writable.close();
+          return;
+        } catch (pickerErr: any) {
+          if (pickerErr?.name === 'AbortError') return;
+          console.warn('showSaveFilePicker failed, falling back to traditional download:', pickerErr);
+        }
+      }
+
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
-      const sanitizedClassName = classObj.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      link.download = `backup_turma_${sanitizedClassName}_${new Date().toISOString().split('T')[0]}.json`;
+      link.download = fileName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {

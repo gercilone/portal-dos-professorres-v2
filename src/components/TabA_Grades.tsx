@@ -454,16 +454,37 @@ export default function TabAGrades({ schoolId, classId, subjectId, bimonthly, is
         csvLines.push(row.join(';'));
       });
 
-      // Inclui UTF-8 BOM para garantir acentos corretos no Excel em português
       const csvContent = '\uFEFF' + csvLines.join('\r\n');
+      const sanitizedClassName = className.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const sanitizedSubjectName = subjectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const fileName = `notas_${sanitizedClassName}_${sanitizedSubjectName}_${bimonthly}Bim.csv`;
+
+      if (typeof window !== 'undefined' && 'showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+            types: [
+              {
+                description: 'Planilha CSV',
+                accept: { 'text/csv': ['.csv'] },
+              },
+            ],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(csvContent);
+          await writable.close();
+          return;
+        } catch (pickerErr: any) {
+          if (pickerErr?.name === 'AbortError') return;
+          console.warn('showSaveFilePicker failed, falling back to download link:', pickerErr);
+        }
+      }
+
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      
-      const sanitizedClassName = className.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      const sanitizedSubjectName = subjectName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-      link.download = `notas_${sanitizedClassName}_${sanitizedSubjectName}_${bimonthly}Bim.csv`;
+      link.download = fileName;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {

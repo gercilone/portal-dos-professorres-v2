@@ -166,9 +166,11 @@ export default function HeaderFilters({
   const handleLocalBackup = async () => {
     setIsExportingLocal(true);
     try {
-      await exportLocalBackup(teacherName);
-      setLocalExportSuccess(true);
-      setTimeout(() => setLocalExportSuccess(false), 3000);
+      const res = await exportLocalBackup(teacherName);
+      if (res !== 'CANCELED') {
+        setLocalExportSuccess(true);
+        setTimeout(() => setLocalExportSuccess(false), 3000);
+      }
     } catch (err) {
       console.error('Error exporting local backup:', err);
     } finally {
