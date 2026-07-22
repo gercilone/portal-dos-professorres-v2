@@ -3,9 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db, seedDatabase, setCloudSyncDisabled } from '../db';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from '../utils/deduplicate';
 import { School, Class, Subject, Student, SubjectWorkload, WeeklySchedule, sortClasses } from '../types';
-import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon, HardDrive, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Edit2, X, Import, Download, Upload, Calendar, Clock, BookOpen, School as SchoolIcon, Users, Settings, Database, Check, AlertTriangle, Sparkles, Save, User, Lock, Shield, Eye, EyeOff, Cloud, CloudUpload, CloudDownload, Sun, Moon } from 'lucide-react';
 import { pushTeacherDataToCloud, pullTeacherDataFromCloud, getGlobalSchools, getGlobalClasses, getGlobalStudents, getGlobalSubjects, getGlobalWorkloads, syncProfessorsListInCloud } from '../firebase';
-import { getBackupFilename, uploadBackupToDrive, listDriveBackups, downloadDriveBackup, DriveBackupFile } from '../googleDrive';
 
 export function getSchoolColorClasses(schoolId: number | undefined) {
   if (!schoolId) {
@@ -142,14 +141,6 @@ export default function TabFSettings({
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentRoll, setNewStudentRoll] = useState<number | undefined>(undefined);
   const [bulkStudentText, setBulkStudentText] = useState('');
-
-  // GOOGLE DRIVE BACKUP STATES
-  const [isDriveUploading, setIsDriveUploading] = useState(false);
-  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
-  const [isDriveLoadingList, setIsDriveLoadingList] = useState(false);
-  const [driveBackupsList, setDriveBackupsList] = useState<DriveBackupFile[]>([]);
-  const [driveUploadMsg, setDriveUploadMsg] = useState('');
-  const [driveRestoreMsg, setDriveRestoreMsg] = useState('');
 
   // GRADE / WORKLOAD STATES
   const [selectedClassIdForWorkload, setSelectedClassIdForWorkload] = useState<number | undefined>(undefined);
@@ -561,6 +552,63 @@ export default function TabFSettings({
 
   const workloads = useLiveQuery(() => db.subjectWorkloads.toArray()) || [];
   const weeklySchedules = useLiveQuery(() => db.weeklySchedule.toArray()) || [];
+
+  // Filter out invalid/generic/duplicate workloads
+  const validWorkloads = useMemo(() => {
+    const seenKeys = new Set<string>();
+    const result: typeof workloads = [];
+
+    for (const wl of workloads) {
+      const c = classes.find((cl) => cl.id === wl.classId);
+      const sub = subjects.find((s) => s.id === wl.subjectId);
+
+      if (!c || !sub || !sub.name || sub.name.trim().toLowerCase() === 'disciplina') {
+        continue;
+      }
+
+      const key = `${wl.classId}_${wl.subjectId}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        result.push(wl);
+      }
+    }
+
+    return result;
+  }, [workloads, classes, subjects]);
+
+  // Clean up orphan, generic or duplicate workloads from local IndexedDB
+  useEffect(() => {
+    if (!workloads || workloads.length === 0 || classes.length === 0 || subjects.length === 0) return;
+
+    const seenKeys = new Set<string>();
+    const idsToDelete: number[] = [];
+
+    for (const wl of workloads) {
+      const c = classes.find((cl) => cl.id === wl.classId);
+      const sub = subjects.find((s) => s.id === wl.subjectId);
+
+      const isBadSub = !sub || !sub.name || sub.name.trim().toLowerCase() === 'disciplina';
+      const isBadClass = !c;
+
+      if (isBadSub || isBadClass) {
+        if (wl.id) idsToDelete.push(wl.id);
+        continue;
+      }
+
+      const key = `${wl.classId}_${wl.subjectId}`;
+      if (seenKeys.has(key)) {
+        if (wl.id) idsToDelete.push(wl.id);
+      } else {
+        seenKeys.add(key);
+      }
+    }
+
+    if (idsToDelete.length > 0) {
+      db.subjectWorkloads.bulkDelete(idsToDelete).catch((err) => {
+        console.error('Error cleaning up local invalid/duplicate workloads:', err);
+      });
+    }
+  }, [workloads, classes, subjects]);
 
   const classesBySchool = selectedSchoolIdForStudent 
     ? [...classes].filter(c => c.schoolId === selectedSchoolIdForStudent).sort(sortClasses)
@@ -1093,47 +1141,42 @@ export default function TabFSettings({
     });
   };
 
-  // GET FULL BACKUP DATA PAYLOAD
-  const getFullBackupData = async () => {
-    return {
-      type: 'full_portal_backup_v2',
-      meta: {
-        activeUser: localStorage.getItem('portal_active_user'),
-        activeUserDb: localStorage.getItem('portal_active_user_db'),
-        teacherName: localStorage.getItem('portal_teacher_name'),
-        username: localStorage.getItem('portal_username'),
-        authEnabled: localStorage.getItem('portal_auth_enabled'),
-        professorsList: localStorage.getItem('portal_professors_list'),
-        coordinatorsList: localStorage.getItem('portal_coordinators_list'),
-      },
-      schools: await db.schools.toArray(),
-      classes: await db.classes.toArray(),
-      subjects: await db.subjects.toArray(),
-      students: await db.students.toArray(),
-      subjectWorkloads: await db.subjectWorkloads.toArray(),
-      weeklySchedule: await db.weeklySchedule.toArray(),
-      bimonthlyGrades: await db.bimonthlyGrades.toArray(),
-      assignmentDescriptions: await db.assignmentDescriptions.toArray(),
-      lessons: await db.lessons.toArray(),
-      attendance: await db.attendance.toArray(),
-      vistoColumns: await db.vistoColumns.toArray(),
-      studentVistos: await db.studentVistos.toArray(),
-      vistoRankingScores: await db.vistoRankingScores.toArray(),
-      extraGrades: await db.extraGrades.toArray()
-    };
-  };
-
-  // BACKUP EXPORT (LOCAL JSON FILE)
+  // BACKUP EXPORT
   const handleExportBackup = async () => {
     try {
-      const data = await getFullBackupData();
-      const filename = getBackupFilename();
+      const data = {
+        type: 'full_portal_backup_v2',
+        meta: {
+          activeUser: localStorage.getItem('portal_active_user'),
+          activeUserDb: localStorage.getItem('portal_active_user_db'),
+          teacherName: localStorage.getItem('portal_teacher_name'),
+          username: localStorage.getItem('portal_username'),
+          authEnabled: localStorage.getItem('portal_auth_enabled'),
+          professorsList: localStorage.getItem('portal_professors_list'),
+          coordinatorsList: localStorage.getItem('portal_coordinators_list'),
+        },
+        schools: await db.schools.toArray(),
+        classes: await db.classes.toArray(),
+        subjects: await db.subjects.toArray(),
+        students: await db.students.toArray(),
+        subjectWorkloads: await db.subjectWorkloads.toArray(),
+        weeklySchedule: await db.weeklySchedule.toArray(),
+        bimonthlyGrades: await db.bimonthlyGrades.toArray(),
+        assignmentDescriptions: await db.assignmentDescriptions.toArray(),
+        lessons: await db.lessons.toArray(),
+        attendance: await db.attendance.toArray(),
+        vistoColumns: await db.vistoColumns.toArray(),
+        studentVistos: await db.studentVistos.toArray(),
+        vistoRankingScores: await db.vistoRankingScores.toArray(),
+        extraGrades: await db.extraGrades.toArray()
+      };
+
       const jsonStr = JSON.stringify(data, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = filename;
+      link.download = `backup_portal_professor_${new Date().toISOString().split('T')[0]}.json`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -1144,301 +1187,6 @@ export default function TabFSettings({
         message: 'Erro ao exportar backup local.'
       });
     }
-  };
-
-  // BACKUP EXPORT (GOOGLE DRIVE)
-  const handleGoogleDriveBackup = async () => {
-    try {
-      setIsDriveUploading(true);
-      setDriveUploadMsg('Conectando ao Google Drive...');
-      const data = await getFullBackupData();
-      const filename = getBackupFilename();
-      setDriveUploadMsg('Enviando arquivo JSON para o Google Drive...');
-      const res = await uploadBackupToDrive(data, filename);
-      setAlertDialog({
-        isOpen: true,
-        title: 'Backup no Google Drive Concluído!',
-        message: `O backup foi salvo com sucesso no seu Google Drive.\n\nNome do Arquivo:\n${res.name}`
-      });
-    } catch (err: any) {
-      console.error('Google Drive export failed:', err);
-      setAlertDialog({
-        isOpen: true,
-        title: 'Erro ao Salvar no Google Drive',
-        message: err.message || 'Não foi possível enviar o backup para o Google Drive. Verifique suas permissões.'
-      });
-    } finally {
-      setIsDriveUploading(false);
-      setDriveUploadMsg('');
-    }
-  };
-
-  // GOOGLE DRIVE RESTORE LIST MODAL
-  const handleOpenDriveRestoreModal = async () => {
-    setIsDriveModalOpen(true);
-    setIsDriveLoadingList(true);
-    setDriveRestoreMsg('Buscando seus backups no Google Drive...');
-    try {
-      const list = await listDriveBackups();
-      setDriveBackupsList(list);
-    } catch (err: any) {
-      console.error('Error listing Drive backups:', err);
-      setAlertDialog({
-        isOpen: true,
-        title: 'Erro no Google Drive',
-        message: err.message || 'Não foi possível carregar os backups do Google Drive.'
-      });
-      setIsDriveModalOpen(false);
-    } finally {
-      setIsDriveLoadingList(false);
-      setDriveRestoreMsg('');
-    }
-  };
-
-  // RESTORE PURE DATA PAYLOAD INTO DB
-  const restoreBackupPayload = async (data: any) => {
-    setCloudSyncDisabled(true);
-
-    if (data.meta) {
-      if (data.meta.professorsList) {
-        try {
-          const backupProfs = JSON.parse(data.meta.professorsList);
-          const currentProfsStr = localStorage.getItem('portal_professors_list');
-          let mergedProfs = backupProfs;
-          if (currentProfsStr) {
-            const currentProfs = JSON.parse(currentProfsStr);
-            const map = new Map();
-            currentProfs.forEach((p: any) => {
-              if (p && p.username) map.set(p.username.toLowerCase(), p);
-            });
-            backupProfs.forEach((p: any) => {
-              if (p && p.username) map.set(p.username.toLowerCase(), p);
-            });
-            mergedProfs = Array.from(map.values());
-          }
-          localStorage.setItem('portal_professors_list', JSON.stringify(mergedProfs));
-        } catch (e) {
-          console.error('Error merging professors list:', e);
-        }
-      }
-
-      if (data.meta.coordinatorsList) {
-        try {
-          const backupCoords = JSON.parse(data.meta.coordinatorsList);
-          const currentCoordsStr = localStorage.getItem('portal_coordinators_list');
-          let mergedCoords = backupCoords;
-          if (currentCoordsStr) {
-            const currentCoords = JSON.parse(currentCoordsStr);
-            const map = new Map();
-            currentCoords.forEach((c: any) => {
-              if (c && c.username) map.set(c.username.toLowerCase(), c);
-            });
-            backupCoords.forEach((c: any) => {
-              if (c && c.username) map.set(c.username.toLowerCase(), c);
-            });
-            mergedCoords = Array.from(map.values());
-          }
-          localStorage.setItem('portal_coordinators_list', JSON.stringify(mergedCoords));
-        } catch (e) {
-          console.error('Error merging coordinators list:', e);
-        }
-      }
-
-      if (data.meta.activeUser) {
-        localStorage.setItem('portal_active_user', data.meta.activeUser);
-      }
-      if (data.meta.activeUserDb) {
-        localStorage.setItem('portal_active_user_db', data.meta.activeUserDb);
-      }
-      if (data.meta.teacherName) {
-        localStorage.setItem('portal_teacher_name', data.meta.teacherName);
-      }
-      if (data.meta.username) {
-        localStorage.setItem('portal_username', data.meta.username);
-      }
-      if (data.meta.authEnabled) {
-        localStorage.setItem('portal_auth_enabled', data.meta.authEnabled);
-      }
-      
-      window.dispatchEvent(new Event('storage'));
-    }
-
-    if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
-      data.bimonthlyGrades = data.bimonthlyGrades.map((bg: any) => {
-        if (bg.bimonth !== undefined && bg.bimonthly === undefined) {
-          bg.bimonthly = Number(bg.bimonth);
-        }
-        if (bg.bimonthly === undefined) {
-          bg.bimonthly = 1;
-        }
-        if (bg.subjectId === undefined) {
-          bg.subjectId = 10;
-        }
-        return bg;
-      });
-    }
-
-    const extraGradesMap = new Map<string, { studentId: number; subjectId: number; recSem1?: number; recSem2?: number; finalExam?: number }>();
-
-    if (data.extraGrades && Array.isArray(data.extraGrades)) {
-      data.extraGrades.forEach((eg: any) => {
-        const key = `${eg.studentId}_${eg.subjectId}`;
-        extraGradesMap.set(key, {
-          studentId: Number(eg.studentId),
-          subjectId: Number(eg.subjectId),
-          recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
-          recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
-          finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined,
-        });
-      });
-    }
-
-    if (data.students && Array.isArray(data.students)) {
-      let defaultSubjectId = 10;
-      if (data.subjects && Array.isArray(data.subjects) && data.subjects.length > 0) {
-        const firstSub = data.subjects[0];
-        if (firstSub && firstSub.id) defaultSubjectId = Number(firstSub.id);
-      }
-
-      data.students.forEach((student: any) => {
-        const recSem1 = student.recSem1 ?? student.recSemestral1;
-        const recSem2 = student.recSem2 ?? student.recSemestral2;
-        const finalExam = student.finalExam ?? student.provaFinal;
-
-        if (
-          (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
-          (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
-          (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
-        ) {
-          const sId = Number(student.id);
-          const key = `${sId}_${defaultSubjectId}`;
-          const existing = extraGradesMap.get(key) || { studentId: sId, subjectId: defaultSubjectId };
-
-          if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
-          if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
-          if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
-
-          extraGradesMap.set(key, existing);
-        }
-      });
-    }
-
-    if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
-      data.bimonthlyGrades.forEach((bg: any) => {
-        const recSem1 = bg.recSem1 ?? bg.recSemestral1;
-        const recSem2 = bg.recSem2 ?? bg.recSemestral2;
-        const finalExam = bg.finalExam ?? bg.provaFinal;
-        const bgSubjectId = Number(bg.subjectId || 10);
-        const bgStudentId = Number(bg.studentId);
-
-        if (
-          (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
-          (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
-          (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
-        ) {
-          const key = `${bgStudentId}_${bgSubjectId}`;
-          const existing = extraGradesMap.get(key) || { studentId: bgStudentId, subjectId: bgSubjectId };
-
-          if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
-          if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
-          if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
-
-          extraGradesMap.set(key, existing);
-        }
-      });
-    }
-
-    if (extraGradesMap.size > 0) {
-      data.extraGrades = Array.from(extraGradesMap.values()).map((eg, idx) => ({
-        id: idx + 1,
-        ...eg
-      }));
-    }
-
-    await db.transaction('rw', [
-      db.schools, db.classes, db.subjects, db.students, db.subjectWorkloads,
-      db.weeklySchedule, db.bimonthlyGrades, db.assignmentDescriptions,
-      db.lessons, db.attendance, db.vistoColumns, db.studentVistos,
-      db.vistoRankingScores, db.extraGrades
-    ], async () => {
-      await db.schools.clear();
-      await db.classes.clear();
-      await db.subjects.clear();
-      await db.students.clear();
-      await db.subjectWorkloads.clear();
-      await db.weeklySchedule.clear();
-      await db.bimonthlyGrades.clear();
-      await db.assignmentDescriptions.clear();
-      await db.lessons.clear();
-      await db.attendance.clear();
-      await db.vistoColumns.clear();
-      await db.studentVistos.clear();
-      await db.vistoRankingScores.clear();
-      await db.extraGrades.clear();
-
-      if (data.schools) await db.schools.bulkAdd(data.schools);
-      if (data.classes) await db.classes.bulkAdd(data.classes);
-      if (data.subjects) await db.subjects.bulkAdd(data.subjects);
-      if (data.students) await db.students.bulkAdd(data.students);
-      if (data.subjectWorkloads) await db.subjectWorkloads.bulkAdd(data.subjectWorkloads);
-      if (data.weeklySchedule) await db.weeklySchedule.bulkAdd(data.weeklySchedule);
-      if (data.bimonthlyGrades) await db.bimonthlyGrades.bulkAdd(data.bimonthlyGrades);
-      if (data.assignmentDescriptions) await db.assignmentDescriptions.bulkAdd(data.assignmentDescriptions);
-      if (data.lessons) await db.lessons.bulkAdd(data.lessons);
-      if (data.attendance) await db.attendance.bulkAdd(data.attendance);
-      if (data.vistoColumns) await db.vistoColumns.bulkAdd(data.vistoColumns);
-      if (data.studentVistos) await db.studentVistos.bulkAdd(data.studentVistos);
-      if (data.vistoRankingScores) await db.vistoRankingScores.bulkAdd(data.vistoRankingScores);
-      if (data.extraGrades) await db.extraGrades.bulkAdd(data.extraGrades);
-    });
-
-    const activeUser = localStorage.getItem('portal_active_user');
-    if (activeUser) {
-      try {
-        await pushTeacherDataToCloud(activeUser, db);
-      } catch (cloudErr) {
-        console.error('Failed to auto-sync imported data to Cloud Firestore:', cloudErr);
-      }
-    }
-  };
-
-  // RESTORE FROM GOOGLE DRIVE FILE
-  const handleRestoreFromDriveFile = async (file: DriveBackupFile) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'RESTAURAR BACKUP DO GOOGLE DRIVE',
-      message: `ATENÇÃO: Deseja restaurar o backup "${file.name}" baixado do Google Drive? Todos os seus diários atuais serão substituídos pelos dados deste arquivo.`,
-      confirmText: 'Sim, Restaurar',
-      cancelText: 'Cancelar',
-      onConfirm: async () => {
-        setConfirmDialog(null);
-        try {
-          setIsDriveLoadingList(true);
-          setDriveRestoreMsg('Baixando dados do Google Drive...');
-          const backupData = await downloadDriveBackup(file.id);
-          await restoreBackupPayload(backupData);
-          setAlertDialog({
-            isOpen: true,
-            title: 'Restauração Concluída!',
-            message: 'O backup do Google Drive foi restaurado com sucesso.',
-            onClose: () => {
-              window.location.reload();
-            }
-          });
-        } catch (err: any) {
-          console.error('Error restoring from Drive file:', err);
-          setAlertDialog({
-            isOpen: true,
-            title: 'Erro na Restauração',
-            message: err.message || 'Falha ao baixar/restaurar o backup do Google Drive.'
-          });
-        } finally {
-          setIsDriveLoadingList(false);
-          setDriveRestoreMsg('');
-          setIsDriveModalOpen(false);
-        }
-      }
-    });
   };
 
   // EXPORTAR DADOS POR TURMA (Trabalhos por Turma)
@@ -1850,7 +1598,7 @@ export default function TabFSettings({
     e.target.value = '';
   };
 
-  // BACKUP IMPORT (LOCAL FILE)
+  // BACKUP IMPORT
   const handleImportBackup = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1869,8 +1617,225 @@ export default function TabFSettings({
           cancelText: 'Cancelar',
           onConfirm: async () => {
             setConfirmDialog(null);
+            setCloudSyncDisabled(true);
+
             try {
-              await restoreBackupPayload(data);
+              // Restore session and user metadata from backup if available (Device Migration support)
+              if (data.meta) {
+                if (data.meta.professorsList) {
+                  try {
+                    const backupProfs = JSON.parse(data.meta.professorsList);
+                    const currentProfsStr = localStorage.getItem('portal_professors_list');
+                    let mergedProfs = backupProfs;
+                    if (currentProfsStr) {
+                      const currentProfs = JSON.parse(currentProfsStr);
+                      const map = new Map();
+                      currentProfs.forEach((p: any) => {
+                        if (p && p.username) map.set(p.username.toLowerCase(), p);
+                      });
+                      backupProfs.forEach((p: any) => {
+                        if (p && p.username) map.set(p.username.toLowerCase(), p);
+                      });
+                      mergedProfs = Array.from(map.values());
+                    }
+                    localStorage.setItem('portal_professors_list', JSON.stringify(mergedProfs));
+                  } catch (e) {
+                    console.error('Error merging professors list:', e);
+                  }
+                }
+
+                if (data.meta.coordinatorsList) {
+                  try {
+                    const backupCoords = JSON.parse(data.meta.coordinatorsList);
+                    const currentCoordsStr = localStorage.getItem('portal_coordinators_list');
+                    let mergedCoords = backupCoords;
+                    if (currentCoordsStr) {
+                      const currentCoords = JSON.parse(currentCoordsStr);
+                      const map = new Map();
+                      currentCoords.forEach((c: any) => {
+                        if (c && c.username) map.set(c.username.toLowerCase(), c);
+                      });
+                      backupCoords.forEach((c: any) => {
+                        if (c && c.username) map.set(c.username.toLowerCase(), c);
+                      });
+                      mergedCoords = Array.from(map.values());
+                    }
+                    localStorage.setItem('portal_coordinators_list', JSON.stringify(mergedCoords));
+                  } catch (e) {
+                    console.error('Error merging coordinators list:', e);
+                  }
+                }
+
+                if (data.meta.activeUser) {
+                  localStorage.setItem('portal_active_user', data.meta.activeUser);
+                }
+                if (data.meta.activeUserDb) {
+                  localStorage.setItem('portal_active_user_db', data.meta.activeUserDb);
+                }
+                if (data.meta.teacherName) {
+                  localStorage.setItem('portal_teacher_name', data.meta.teacherName);
+                }
+                if (data.meta.username) {
+                  localStorage.setItem('portal_username', data.meta.username);
+                }
+                if (data.meta.authEnabled) {
+                  localStorage.setItem('portal_auth_enabled', data.meta.authEnabled);
+                }
+                
+                // Let the UI system know storage has changed
+                window.dispatchEvent(new Event('storage'));
+              }
+
+              // 1. NORMALIZE AND MIGRATE DATA STRUCTURES (older backups compatibility)
+              
+              // Normalize bimonth -> bimonthly for bimonthlyGrades
+              if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
+                data.bimonthlyGrades = data.bimonthlyGrades.map((bg: any) => {
+                  if (bg.bimonth !== undefined && bg.bimonthly === undefined) {
+                    bg.bimonthly = Number(bg.bimonth);
+                  }
+                  if (bg.bimonthly === undefined) {
+                    bg.bimonthly = 1;
+                  }
+                  // Resolve subjectId if missing
+                  if (bg.subjectId === undefined) {
+                    bg.subjectId = 10; // default to Mathematics
+                  }
+                  return bg;
+                });
+              }
+
+              // Extract mid-term recovery grades (recSemestral1, recSemestral2, provaFinal / recSem1, recSem2, finalExam)
+              // from either 'students' or 'bimonthlyGrades' and merge them into 'extraGrades'
+              const extraGradesMap = new Map<string, { studentId: number; subjectId: number; recSem1?: number; recSem2?: number; finalExam?: number }>();
+
+              // Load any existing extraGrades from the backup if they are already structured as a dedicated list
+              if (data.extraGrades && Array.isArray(data.extraGrades)) {
+                data.extraGrades.forEach((eg: any) => {
+                  const key = `${eg.studentId}_${eg.subjectId}`;
+                  extraGradesMap.set(key, {
+                    studentId: Number(eg.studentId),
+                    subjectId: Number(eg.subjectId),
+                    recSem1: eg.recSem1 !== undefined && eg.recSem1 !== null ? Number(eg.recSem1) : undefined,
+                    recSem2: eg.recSem2 !== undefined && eg.recSem2 !== null ? Number(eg.recSem2) : undefined,
+                    finalExam: eg.finalExam !== undefined && eg.finalExam !== null ? Number(eg.finalExam) : undefined,
+                  });
+                });
+              }
+
+              // Try to extract from 'students' records (legacy backups where recovery grades were placed on the student object)
+              if (data.students && Array.isArray(data.students)) {
+                let defaultSubjectId = 10; // default main subject ID
+                if (data.subjects && Array.isArray(data.subjects) && data.subjects.length > 0) {
+                  const firstSub = data.subjects[0];
+                  if (firstSub && firstSub.id) defaultSubjectId = Number(firstSub.id);
+                }
+
+                data.students.forEach((student: any) => {
+                  const recSem1 = student.recSem1 ?? student.recSemestral1;
+                  const recSem2 = student.recSem2 ?? student.recSemestral2;
+                  const finalExam = student.finalExam ?? student.provaFinal;
+
+                  if (
+                    (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+                    (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+                    (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+                  ) {
+                    const sId = Number(student.id);
+                    const key = `${sId}_${defaultSubjectId}`;
+                    const existing = extraGradesMap.get(key) || { studentId: sId, subjectId: defaultSubjectId };
+
+                    if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+                    if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+                    if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+
+                    extraGradesMap.set(key, existing);
+                  }
+                });
+              }
+
+              // Try to extract from 'bimonthlyGrades' records (legacy backups where recovery was on grade entries)
+              if (data.bimonthlyGrades && Array.isArray(data.bimonthlyGrades)) {
+                data.bimonthlyGrades.forEach((bg: any) => {
+                  const recSem1 = bg.recSem1 ?? bg.recSemestral1;
+                  const recSem2 = bg.recSem2 ?? bg.recSemestral2;
+                  const finalExam = bg.finalExam ?? bg.provaFinal;
+                  const bgSubjectId = Number(bg.subjectId || 10);
+                  const bgStudentId = Number(bg.studentId);
+
+                  if (
+                    (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) ||
+                    (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) ||
+                    (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0)
+                  ) {
+                    const key = `${bgStudentId}_${bgSubjectId}`;
+                    const existing = extraGradesMap.get(key) || { studentId: bgStudentId, subjectId: bgSubjectId };
+
+                    if (recSem1 !== undefined && recSem1 !== null && Number(recSem1) > 0) existing.recSem1 = Number(recSem1);
+                    if (recSem2 !== undefined && recSem2 !== null && Number(recSem2) > 0) existing.recSem2 = Number(recSem2);
+                    if (finalExam !== undefined && finalExam !== null && Number(finalExam) > 0) existing.finalExam = Number(finalExam);
+
+                    extraGradesMap.set(key, existing);
+                  }
+                });
+              }
+
+              // Format extraGrades for Dexie bulk insertion
+              if (extraGradesMap.size > 0) {
+                data.extraGrades = Array.from(extraGradesMap.values()).map((eg, idx) => ({
+                  id: idx + 1,
+                  ...eg
+                }));
+              }
+
+              // Transactional overwrite
+              await db.transaction('rw', [
+                db.schools, db.classes, db.subjects, db.students, db.subjectWorkloads,
+                db.weeklySchedule, db.bimonthlyGrades, db.assignmentDescriptions,
+                db.lessons, db.attendance, db.vistoColumns, db.studentVistos,
+                db.vistoRankingScores, db.extraGrades
+              ], async () => {
+                await db.schools.clear();
+                await db.classes.clear();
+                await db.subjects.clear();
+                await db.students.clear();
+                await db.subjectWorkloads.clear();
+                await db.weeklySchedule.clear();
+                await db.bimonthlyGrades.clear();
+                await db.assignmentDescriptions.clear();
+                await db.lessons.clear();
+                await db.attendance.clear();
+                await db.vistoColumns.clear();
+                await db.studentVistos.clear();
+                await db.vistoRankingScores.clear();
+                await db.extraGrades.clear();
+
+                if (data.schools) await db.schools.bulkAdd(data.schools);
+                if (data.classes) await db.classes.bulkAdd(data.classes);
+                if (data.subjects) await db.subjects.bulkAdd(data.subjects);
+                if (data.students) await db.students.bulkAdd(data.students);
+                if (data.subjectWorkloads) await db.subjectWorkloads.bulkAdd(data.subjectWorkloads);
+                if (data.weeklySchedule) await db.weeklySchedule.bulkAdd(data.weeklySchedule);
+                if (data.bimonthlyGrades) await db.bimonthlyGrades.bulkAdd(data.bimonthlyGrades);
+                if (data.assignmentDescriptions) await db.assignmentDescriptions.bulkAdd(data.assignmentDescriptions);
+                if (data.lessons) await db.lessons.bulkAdd(data.lessons);
+                if (data.attendance) await db.attendance.bulkAdd(data.attendance);
+                if (data.vistoColumns) await db.vistoColumns.bulkAdd(data.vistoColumns);
+                if (data.studentVistos) await db.studentVistos.bulkAdd(data.studentVistos);
+                if (data.vistoRankingScores) await db.vistoRankingScores.bulkAdd(data.vistoRankingScores);
+                if (data.extraGrades) await db.extraGrades.bulkAdd(data.extraGrades);
+              });
+
+              // Automatically sync/push the imported and normalized data to the Cloud (Firestore)
+              const activeUser = localStorage.getItem('portal_active_user');
+              if (activeUser) {
+                try {
+                  await pushTeacherDataToCloud(activeUser, db);
+                } catch (cloudErr) {
+                  console.error('Failed to auto-sync imported data to Cloud Firestore:', cloudErr);
+                }
+              }
+
               setAlertDialog({
                 isOpen: true,
                 title: 'Sucesso',
@@ -3097,7 +3062,7 @@ export default function TabFSettings({
             
             <div className="bg-sky-950/30 border border-sky-900/50 p-4 rounded-xl space-y-3">
               <p className="text-[11px] text-sky-300 leading-relaxed">
-                O planejamento semestral de cargas horárias (total de aulas por semestre para cada matéria e série) é definido exclusivamente pela coordenação. 
+                O planejamento bimestral de cargas horárias (total de aulas por bimestre para cada matéria e série) é definido exclusivamente pela coordenação. 
                 Sincronize com a nuvem para vincular automaticamente as cargas horárias corretas às suas turmas locais.
               </p>
               <button
@@ -3120,12 +3085,12 @@ export default function TabFSettings({
 
             {/* List current workloads (Read-Only) */}
             <div className="space-y-2">
-              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({workloads.length})</p>
+              <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Cargas Horárias Ativas no Diário ({validWorkloads.length})</p>
               <div className="divide-y divide-zinc-800/60 bg-zinc-950/40 p-2.5 rounded-xl border border-zinc-800">
-                {workloads.length === 0 ? (
+                {validWorkloads.length === 0 ? (
                   <p className="text-[11px] text-zinc-500 text-center py-4 italic">Nenhuma carga horária registrada ainda. Clique em Sincronizar acima.</p>
                 ) : (
-                  workloads.map((wl) => {
+                  validWorkloads.map((wl) => {
                     const c = classes.find((cl) => cl.id === wl.classId);
                     const sub = subjects.find((s) => s.id === wl.subjectId);
                     return (
@@ -3135,7 +3100,7 @@ export default function TabFSettings({
                           <span className="text-[10px] text-zinc-500 block">Série/Turma: {c?.name || '-'}</span>
                         </div>
                         <span className="font-mono font-bold bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-full text-sky-400 text-[10px] shrink-0">
-                          {wl.totalLessons} aulas/semestre
+                          {wl.totalLessons} aulas/bimestre
                         </span>
                       </div>
                     );
@@ -3543,212 +3508,126 @@ export default function TabFSettings({
       {activeSubTab === 'backup' && (
         <div id="settings-backup-section" className="max-w-3xl space-y-6">
           
-          {/* FERRAMENTA DE BACKUP UNIFICADO (LOCAL + GOOGLE DRIVE) */}
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-white font-bold text-sm flex items-center gap-2">
-                <Database className="w-5 h-5 text-blue-400" /> Ferramenta de Backup Unificado (JSON) & Google Drive
-              </h3>
-              <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold px-2.5 py-1 rounded-full uppercase">
-                2 Níveis de Segurança
-              </span>
-            </div>
-
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Database className="w-5 h-5 text-blue-400" /> Ferramenta de Backup Local Unificado (JSON)
+            </h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              O Portal do Professor armazena todos os diários escolares e notas diretamente no seu navegador utilizando IndexedDB de alta performance. Para garantir a total segurança dos seus lançamentos contra limpezas de cache ou falhas no dispositivo, você pode salvar e restaurar seus backups localmente no computador/celular ou diretamente no seu <strong>Google Drive</strong>!
+              O Portal do Professor armazena todos os diários escolares e notas diretamente no seu navegador utilizando IndexedDB de alta performance. Para garantir a segurança dos seus lançamentos contra limpezas involuntárias de cache do navegador ou para migrar seus dados para outro celular ou computador, faça backups regulares!
             </p>
 
-            {/* SEÇÃO 1: BACKUP LOCAL */}
-            <div className="space-y-3 pt-2 border-t border-zinc-800/80">
-              <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Download className="w-4 h-4 text-blue-400" /> 1. Backup Local (Download/Upload de Arquivo JSON)
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* EXPORT LOCAL */}
-                <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
-                  <div className="flex items-center gap-2 text-blue-400">
-                    <Download className="w-4 h-4" />
-                    <h5 className="text-xs font-bold uppercase tracking-wider">Exportar Local</h5>
-                  </div>
-                  <p className="text-[11px] text-zinc-500">Gera um arquivo JSON unificado nomeado com o nome do usuário, data e hora exata.</p>
-                  <button
-                    id="export-backup-btn"
-                    type="button"
-                    onClick={handleExportBackup}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
-                  >
-                    <Download className="w-4 h-4" /> Baixar Backup Local (.json)
-                  </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-800/80">
+              
+              {/* EXPORT PANEL */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-blue-400">
+                  <Download className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Exportar Banco</h4>
                 </div>
-
-                {/* IMPORT LOCAL */}
-                <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
-                  <div className="flex items-center gap-2 text-amber-500">
-                    <Upload className="w-4 h-4" />
-                    <h5 className="text-xs font-bold uppercase tracking-wider">Restaurar do Arquivo</h5>
-                  </div>
-                  <p className="text-[11px] text-zinc-500">Selecione um arquivo de backup JSON salvo no seu aparelho para restaurar todos os diários.</p>
-                  
-                  <label className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
-                    <Upload className="w-4 h-4" />
-                    <span>Selecionar Arquivo JSON</span>
-                    <input
-                      id="import-backup-file-input"
-                      type="file"
-                      accept=".json"
-                      onChange={handleImportBackup}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
+                <p className="text-[11px] text-zinc-500">Gera um arquivo unificado contendo todas as escolas, turmas, alunos, notas, diário de presença, e histórico de vistos.</p>
+                <button
+                  id="export-backup-btn"
+                  type="button"
+                  onClick={handleExportBackup}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
+                >
+                  <Download className="w-4 h-4" /> Baixar Backup (.json)
+                </button>
               </div>
-            </div>
 
-            {/* SEÇÃO 2: GOOGLE DRIVE */}
-            <div className="space-y-3 pt-4 border-t border-zinc-800/80">
-              <h4 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-                <HardDrive className="w-4 h-4 text-emerald-400" /> 2. Google Drive Backup na Nuvem
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* SALVAR NO GOOGLE DRIVE */}
-                <div className="p-4 bg-emerald-950/20 rounded-xl border border-emerald-500/30 space-y-3">
-                  <div className="flex items-center gap-2 text-emerald-400">
-                    <CloudUpload className="w-4 h-4" />
-                    <h5 className="text-xs font-bold uppercase tracking-wider">Salvar no Google Drive</h5>
-                  </div>
-                  <p className="text-[11px] text-zinc-400">
-                    Envia automaticamente uma cópia do backup completo com identificação de data e hora para a sua conta do Google Drive.
-                  </p>
-
-                  {driveUploadMsg && (
-                    <div className="text-[11px] text-emerald-300 bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20 flex items-center gap-2">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>{driveUploadMsg}</span>
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    disabled={isDriveUploading}
-                    onClick={handleGoogleDriveBackup}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
-                  >
-                    {isDriveUploading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Enviando para o Drive...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CloudUpload className="w-4 h-4" />
-                        <span>Salvar no Google Drive</span>
-                      </>
-                    )}
-                  </button>
+              {/* IMPORT PANEL */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-amber-500">
+                  <Upload className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Restaurar Backup</h4>
                 </div>
-
-                {/* RESTAURAR DO GOOGLE DRIVE */}
-                <div className="p-4 bg-teal-950/20 rounded-xl border border-teal-500/30 space-y-3">
-                  <div className="flex items-center gap-2 text-teal-400">
-                    <CloudDownload className="w-4 h-4" />
-                    <h5 className="text-xs font-bold uppercase tracking-wider">Restaurar do Drive</h5>
-                  </div>
-                  <p className="text-[11px] text-zinc-400">
-                    Visualiza a lista de backups salvos no seu Google Drive e permite restaurar qualquer versão anterior com 1 clique.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenDriveRestoreModal}
-                    className="w-full py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer"
-                  >
-                    <CloudDownload className="w-4 h-4" />
-                    <span>Restaurar do Google Drive</span>
-                  </button>
-                </div>
+                <p className="text-[11px] text-zinc-500">Sobrescreve e restaura com segurança todos os seus diários. Esta ação é imediata e irreversível.</p>
+                
+                <label className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                  <Upload className="w-4 h-4" />
+                  <span>Selecionar Arquivo JSON</span>
+                  <input
+                    id="import-backup-file-input"
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportBackup}
+                    className="hidden"
+                  />
+                </label>
               </div>
-            </div>
 
+            </div>
           </div>
 
-          {/* GOOGLE DRIVE RESTORE MODAL */}
-          {isDriveModalOpen && (
-            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-              <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl animate-in fade-in zoom-in duration-200">
-                <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <HardDrive className="w-5 h-5 text-emerald-400" /> Backups Encontrados no Google Drive
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setIsDriveModalOpen(false)}
-                    className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+          {/* EXPORTAR E RESTAURAR POR TURMA */}
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
+            <h3 className="text-white font-bold text-sm flex items-center gap-2">
+              <Users className="w-5 h-5 text-purple-400" /> Exportação e Restauração de Diários por Turma
+            </h3>
+            <p className="text-xs text-zinc-400 leading-relaxed">
+              Deseja exportar ou restaurar apenas uma turma específica? Esta ferramenta permite isolar todo o trabalho (alunos, notas, presenças, diários de aula e vistos) de uma única turma em um arquivo JSON. Excelente para compartilhar com outros professores ou restaurar turmas seletivamente sem afetar as demais.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-zinc-800/80">
+              {/* SELETOR E EXPORTADOR */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-purple-400">
+                  <Download className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Exportar Turma Selecionada</h4>
                 </div>
+                <p className="text-[11px] text-zinc-500">Selecione uma turma para gerar o arquivo de diário e notas específico dela.</p>
+                
+                <div className="space-y-2">
+                  <select
+                    value={selectedClassIdForExport || ''}
+                    onChange={(e) => setSelectedClassIdForExport(e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full bg-zinc-900 border border-zinc-850 text-zinc-200 text-xs rounded-xl px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  >
+                    <option value="">-- Selecione uma Turma --</option>
+                    {[...classes].sort(sortClasses).map((cl) => {
+                      const sch = schools.find((s) => s.id === cl.schoolId);
+                      return (
+                        <option key={cl.id} value={cl.id}>
+                          {cl.name} {sch ? `(${sch.name})` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
 
-                {isDriveLoadingList ? (
-                  <div className="py-12 text-center space-y-3">
-                    <RefreshCw className="w-8 h-8 text-emerald-400 animate-spin mx-auto" />
-                    <p className="text-xs text-zinc-300 font-medium">{driveRestoreMsg || 'Carregando arquivos do Google Drive...'}</p>
-                  </div>
-                ) : driveBackupsList.length === 0 ? (
-                  <div className="py-10 text-center space-y-3">
-                    <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto" />
-                    <p className="text-xs text-zinc-300 font-medium">Nenhum arquivo de backup foi encontrado no seu Google Drive.</p>
-                    <p className="text-[11px] text-zinc-500">
-                      Faça o seu primeiro backup clicando em "Salvar no Google Drive" antes de tentar restaurar.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-xs text-zinc-400">
-                      Selecione o arquivo de backup abaixo para restaurar todos os diários de aula e dados:
-                    </p>
-
-                    <div className="max-h-60 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                      {driveBackupsList.map((file) => (
-                        <div
-                          key={file.id}
-                          className="p-3 bg-zinc-950/60 border border-zinc-800 hover:border-emerald-500/50 rounded-xl flex items-center justify-between transition group"
-                        >
-                          <div className="space-y-0.5 overflow-hidden">
-                            <p className="text-xs font-bold text-zinc-200 truncate group-hover:text-emerald-400 transition">
-                              {file.name}
-                            </p>
-                            <p className="text-[10px] text-zinc-500 font-mono">
-                              Modificado: {file.createdTime ? new Date(file.createdTime).toLocaleString('pt-BR') : file.id}
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRestoreFromDriveFile(file)}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition shadow flex-shrink-0 cursor-pointer"
-                          >
-                            Restaurar
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="pt-3 border-t border-zinc-800 flex justify-end">
                   <button
                     type="button"
-                    onClick={() => setIsDriveModalOpen(false)}
-                    className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl transition"
+                    disabled={!selectedClassIdForExport}
+                    onClick={() => selectedClassIdForExport && handleExportClassBackup(selectedClassIdForExport)}
+                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow cursor-pointer text-center"
                   >
-                    Fechar
+                    <Download className="w-4 h-4" /> Baixar Dados da Turma (.json)
                   </button>
                 </div>
               </div>
+
+              {/* IMPORTADOR SELETIVO */}
+              <div className="p-4 bg-zinc-950/40 rounded-xl border border-zinc-800 space-y-3">
+                <div className="flex items-center gap-2 text-emerald-400">
+                  <Upload className="w-4 h-4" />
+                  <h4 className="text-xs font-bold uppercase tracking-wider">Restaurar / Importar Turma</h4>
+                </div>
+                <p className="text-[11px] text-zinc-500">
+                  Importa o backup de uma única turma. Se já existir uma turma de mesmo nome nesta escola, ela será substituída com seus dados. Outras turmas permanecem intactas.
+                </p>
+                
+                <label className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                  <Upload className="w-4 h-4" />
+                  <span>Selecionar Arquivo da Turma</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportClassBackup}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
-          )}
+          </div>
 
           {/* Sincronização em Nuvem (Firebase Firestore) */}
           <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-4">
