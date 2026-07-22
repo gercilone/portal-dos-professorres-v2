@@ -707,20 +707,7 @@ export default function App() {
     }
 
     // Then check professors list
-    let matchingProf = selectedProf || professors.find(prof => prof.username.toLowerCase() === u);
-
-    if (!matchingProf) {
-      try {
-        const cloudProfs = await syncProfessorsListInCloud();
-        if (cloudProfs && Array.isArray(cloudProfs)) {
-          setProfessors(cloudProfs);
-          localStorage.setItem('portal_professors_list', JSON.stringify(cloudProfs));
-          matchingProf = cloudProfs.find((prof: any) => prof.username.toLowerCase() === u);
-        }
-      } catch (e) {
-        console.warn('Could not refresh professors list from cloud during login:', e);
-      }
-    }
+    const matchingProf = selectedProf || professors.find(prof => prof.username.toLowerCase() === u);
 
     if (matchingProf) {
       if (p === matchingProf.password) {
@@ -745,7 +732,31 @@ export default function App() {
         }
         localStorage.removeItem('portal_force_cloud_pull');
 
+        // UNCONDITIONAL DATABASE RESTORE DURING LOGIN
         try {
+          // Clear all local tables to avoid merging with other teachers' cached records
+          const tables = [
+            'schools',
+            'classes',
+            'subjects',
+            'students',
+            'subjectWorkloads',
+            'weeklySchedule',
+            'bimonthlyGrades',
+            'assignmentDescriptions',
+            'lessons',
+            'attendance',
+            'vistoColumns',
+            'studentVistos',
+            'vistoRankingScores',
+            'extraGrades'
+          ];
+          for (const tableName of tables) {
+            if ((db as any)[tableName]) {
+              await (db as any)[tableName].clear();
+            }
+          }
+
           // Pull fresh and verify success before seeding
           const pullSuccess = await pullTeacherDataFromCloud(matchingProf.username, db);
           
@@ -757,25 +768,27 @@ export default function App() {
             if (schoolCount === 0 && matchingProf.username.toLowerCase() === 'professor') {
               await seedDatabase();
               // Store seed in cloud so they start synchronized
-              pushTeacherDataToCloud(matchingProf.username, db).catch(() => {});
+              await pushTeacherDataToCloud(matchingProf.username, db);
             }
           } else {
-            console.warn('Pull from cloud failed during login. Continuing with local data.');
+            console.warn('Pull from cloud failed during login. Skipping automatic seed to prevent overwriting cloud data.');
           }
         } catch (err) {
           console.error('Error restoring cloud data on login:', err);
-        } finally {
-          setLoginError('');
-          setIsAuthenticated(true);
-          setUserRole('teacher');
-          setTeacherName(matchingProf.teacherName);
-          setIsAuthEnabled(matchingProf.authEnabled);
-
-          registerActiveSession().catch((sessionErr) => {
-            console.warn('Session write error during login:', sessionErr);
-          });
-          window.dispatchEvent(new Event('storage'));
         }
+
+        setLoginError('');
+        setIsAuthenticated(true);
+        setUserRole('teacher');
+        setTeacherName(matchingProf.teacherName);
+        setIsAuthEnabled(matchingProf.authEnabled);
+        
+        try {
+          await registerActiveSession();
+        } catch (sessionErr) {
+          console.warn('Session write error during login:', sessionErr);
+        }
+        window.dispatchEvent(new Event('storage'));
       } else {
         setLoginError('Senha incorreta. Tente novamente.');
       }

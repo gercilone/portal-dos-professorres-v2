@@ -5,7 +5,6 @@ import {
   collection,
   doc,
   getDocs,
-  getDoc,
   getDocFromServer,
   setDoc,
   deleteDoc,
@@ -102,14 +101,11 @@ export async function registerActiveSession() {
 
       if (activeUser && role) {
         const uid = auth.currentUser.uid;
-        await withTimeout(
-          setDoc(doc(dbInstance, 'sessions', uid), {
-            username: activeUser.toLowerCase(),
-            role: role,
-            timestamp: new Date().toISOString()
-          }),
-          2500
-        );
+        await setDoc(doc(dbInstance, 'sessions', uid), {
+          username: activeUser.toLowerCase(),
+          role: role,
+          timestamp: new Date().toISOString()
+        });
         console.log(`[Firebase Session] Session registered successfully for UID ${uid}: ${activeUser} (${role})`);
         logDetailedFirebaseDebug(`registerActiveSession - Sessão registrada com sucesso para UID: ${uid}, Usuário: ${activeUser}, Cargo: ${role}`);
       } else {
@@ -168,9 +164,7 @@ export function getAuthReadyPromise(): Promise<void> {
 
 export async function ensureAuthAndSession() {
   await getAuthReadyPromise();
-  registerActiveSession().catch((err) => {
-    console.warn('[Firebase Session] Non-blocking session registration note:', err);
-  });
+  await registerActiveSession();
 }
 
 export function getFirestoreInstance() {
@@ -270,12 +264,7 @@ export async function testFirestoreConnection(): Promise<{ success: boolean; err
   try {
     const testDocRef = doc(dbInstance, 'coordinators', '_connectivity_test_');
     logDetailedFirebaseDebug('testFirestoreConnection - Buscando documento de teste: coordinators/_connectivity_test_');
-    try {
-      await withTimeout(getDocFromServer(testDocRef), 8000);
-    } catch (firstErr) {
-      console.warn("getDocFromServer timed out or failed, attempting getDoc fallback...", firstErr);
-      await withTimeout(getDoc(testDocRef), 6000);
-    }
+    await withTimeout(getDocFromServer(testDocRef), 4000);
     logDetailedFirebaseDebug('testFirestoreConnection - SUCESSO! Conectividade confirmada.');
     return { success: true };
   } catch (err: any) {
@@ -443,7 +432,7 @@ export async function syncProfessorsListInCloud() {
       professorsQuery = query(collection(dbInstance, 'professors'), where('schoolId', '==', restrictSchoolId));
     }
 
-    const snapshot = await withTimeout(getDocs(professorsQuery), 8000);
+    const snapshot = await withTimeout(getDocs(professorsQuery), 4000);
     const cloudList: ProfessorAccount[] = [];
     
     snapshot.forEach((doc) => {
@@ -569,12 +558,12 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   try {
     const userLower = username.toLowerCase();
     
-    // Fetch all tables in parallel with an 8s per-table timeout and 15s max overall timeout
+    // Fetch all tables in parallel to make it extremely fast, wrapped in a 25-second timeout for mobile networks!
     const fetchAllPromise = Promise.all(
       TABLES_TO_SYNC.map(async (tableName) => {
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          const snapshot = await withTimeout(getDocs(colRef), 8000);
+          const snapshot = await getDocs(colRef);
           const records: any[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
@@ -589,17 +578,13 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
       })
     );
 
-    const results = await withTimeout(fetchAllPromise, 15000);
-    const totalRecords = results.reduce((sum, item) => sum + item.records.length, 0);
+    const results = await withTimeout(fetchAllPromise, 25000);
 
-    // Only clear and replace local records if cloud actually returned data
-    if (totalRecords > 0) {
-      for (const { tableName, records } of results) {
-        if (dexieDb[tableName]) {
-          await dexieDb[tableName].clear();
-          if (records.length > 0) {
-            await dexieDb[tableName].bulkAdd(records);
-          }
+    for (const { tableName, records } of results) {
+      if (dexieDb[tableName]) {
+        await dexieDb[tableName].clear();
+        if (records.length > 0) {
+          await dexieDb[tableName].bulkAdd(records);
         }
       }
     }
@@ -646,8 +631,8 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
         let cloudDocIds: string[] = [];
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          // 8-second timeout per table fetch to handle network latency gracefully
-          const snapshot = await withTimeout(getDocs(colRef), 8000);
+          // Snappy 4-second timeout per table fetch to handle quota limits or network dropouts gracefully
+          const snapshot = await withTimeout(getDocs(colRef), 4000);
           snapshot.forEach((doc) => {
             cloudDocIds.push(doc.id);
           });
@@ -794,7 +779,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
 
   try {
     const coordsCol = collection(dbInstance, 'coordinators');
-    const snapshot = await withTimeout(getDocs(coordsCol), 8000);
+    const snapshot = await withTimeout(getDocs(coordsCol), 4000);
     const cloudList: CoordinatorAccount[] = [];
     
     snapshot.forEach((doc) => {
