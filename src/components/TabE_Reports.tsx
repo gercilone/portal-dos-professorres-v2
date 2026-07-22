@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import { Student, QUICK_SCORE_OPTIONS, sortClasses } from '../types';
-import { FileText, Printer, FileSpreadsheet, Award, CheckCircle, Calendar, AlertTriangle, Eye, BookOpen, Share2, Info } from 'lucide-react';
+import { FileText, Printer, FileSpreadsheet, Award, CheckCircle, Calendar, AlertTriangle, Eye, BookOpen, Share2, Info, GraduationCap } from 'lucide-react';
 
 interface TabEReportsProps {
   schoolId: number | undefined;
@@ -12,7 +12,7 @@ interface TabEReportsProps {
   isReadOnly?: boolean;
 }
 
-type ReportType = 'grades' | 'attendance' | 'vistos' | 'behavior' | 'lessons_count';
+type ReportType = 'grades' | 'annual' | 'attendance' | 'vistos' | 'behavior' | 'lessons_count';
 
 export default function TabEReports({ schoolId, classId, subjectId, bimonthly, isReadOnly }: TabEReportsProps) {
   const [activeReport, setActiveReport] = useState<ReportType>('grades');
@@ -28,7 +28,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
     return db.students.where({ classId }).sortBy('rollNumber');
   }, [classId]) || [];
 
-  // Load bimonthly grades
+  // Load bimonthly grades for selected bimonthly
   const grades = useLiveQuery(async () => {
     if (!subjectId) return [];
     const targetSubjectId = Number(subjectId);
@@ -37,6 +37,70 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
       .filter(g => Number(g.subjectId) === targetSubjectId && Number(g.bimonthly) === targetBimonthly)
       .toArray();
   }, [bimonthly, subjectId]) || [];
+
+  // Load all bimonthly grades for the selected subject (for annual report across all 4 bimesters)
+  const allSubjectGrades = useLiveQuery(async () => {
+    if (!subjectId) return [];
+    const targetSubjectId = Number(subjectId);
+    return db.bimonthlyGrades
+      .filter(g => Number(g.subjectId) === targetSubjectId)
+      .toArray();
+  }, [subjectId]) || [];
+
+  // Load extra grades (recSem1, recSem2, finalExam) for annual report
+  const extraGrades = useLiveQuery(async () => {
+    if (!subjectId) return [];
+    const targetSubjectId = Number(subjectId);
+    return db.extraGrades
+      .filter(eg => Number(eg.subjectId) === targetSubjectId)
+      .toArray();
+  }, [subjectId]) || [];
+
+  // Helper to calculate student average for a specific bimester (1, 2, 3, 4)
+  const getStudentBimonthlyVal = (studentId: number, bim: number) => {
+    const record = allSubjectGrades.find(
+      (g) => g.studentId === studentId && Number(g.bimonthly) === Number(bim)
+    );
+    if (!record) return null;
+
+    const t1 = record.t1;
+    const t2 = record.t2;
+    const t3 = record.t3;
+    const t4 = record.t4;
+    const t5 = record.t5;
+    const exam = record.exam;
+
+    const hasAny =
+      t1 !== undefined ||
+      t2 !== undefined ||
+      t3 !== undefined ||
+      t4 !== undefined ||
+      t5 !== undefined ||
+      exam !== undefined;
+
+    if (!hasAny) return null;
+
+    const worksSum = (t1 ?? 0) + (t2 ?? 0) + (t3 ?? 0) + (t4 ?? 0) + (t5 ?? 0);
+
+    let averageVal = 0;
+    if (exam !== undefined) {
+      const hasAnyTrab =
+        t1 !== undefined ||
+        t2 !== undefined ||
+        t3 !== undefined ||
+        t4 !== undefined ||
+        t5 !== undefined;
+      if (!hasAnyTrab) {
+        averageVal = exam;
+      } else {
+        averageVal = (worksSum + exam) / 2;
+      }
+    } else {
+      averageVal = worksSum;
+    }
+
+    return parseFloat(averageVal.toFixed(1));
+  };
 
   // Load descriptor labels
   const descriptor = useLiveQuery(async () => {
@@ -310,6 +374,68 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         csvContent += `${idx + 1}º,${item.student.rollNumber},"${item.student.name}",${item.row.totalPoints},${item.row.positives},${item.row.negatives}\n`;
       });
     }
+    else if (activeReport === 'annual') {
+      fileName = `Relatorio_Anual_Notas_Turma_${clazz?.name}.csv`;
+      csvContent = `Relatório Anual de Notas e Recuperação\n`;
+      csvContent += `Escola: ${schoolName}\nTurma: ${className}\nDisciplina: ${subjectName}\nData: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+      csvContent += `Nº,Nome Aluno,1º Bim,2º Bim,Soma 1º Sem (Média 14),Rec. 1º Sem (R1),3º Bim,4º Bim,Soma 2º Sem (Média 14),Rec. 2º Sem (R2),Prova Final (PF),Média Anual\n`;
+
+      let countSem1Below = 0;
+      let countSem2Below = 0;
+
+      students.forEach((st) => {
+        const b1 = getStudentBimonthlyVal(st.id!, 1);
+        const b2 = getStudentBimonthlyVal(st.id!, 2);
+        const b3 = getStudentBimonthlyVal(st.id!, 3);
+        const b4 = getStudentBimonthlyVal(st.id!, 4);
+
+        const hasSem1 = b1 !== null || b2 !== null;
+        const soma1 = hasSem1 ? (b1 ?? 0) + (b2 ?? 0) : null;
+        if (soma1 !== null && soma1 < 14.0) countSem1Below++;
+
+        const hasSem2 = b3 !== null || b4 !== null;
+        const soma2 = hasSem2 ? (b3 ?? 0) + (b4 ?? 0) : null;
+        if (soma2 !== null && soma2 < 14.0) countSem2Below++;
+
+        const extra = extraGrades.find(eg => eg.studentId === st.id!);
+        const r1 = extra?.recSem1 !== undefined && extra.recSem1 !== null ? Number(extra.recSem1) : null;
+        const r2 = extra?.recSem2 !== undefined && extra.recSem2 !== null ? Number(extra.recSem2) : null;
+        const pf = extra?.finalExam !== undefined && extra.finalExam !== null ? Number(extra.finalExam) : null;
+
+        const baseSem1Avg = hasSem1 ? (soma1! / 2) : null;
+        const eff1 = (r1 !== null) ? Math.max(baseSem1Avg ?? 0, r1 > 10 ? r1 / 2 : r1) : baseSem1Avg;
+
+        const baseSem2Avg = hasSem2 ? (soma2! / 2) : null;
+        const eff2 = (r2 !== null) ? Math.max(baseSem2Avg ?? 0, r2 > 10 ? r2 / 2 : r2) : baseSem2Avg;
+
+        let preFinal: number | null = null;
+        if (eff1 !== null && eff2 !== null) preFinal = (eff1 + eff2) / 2;
+        else if (eff1 !== null) preFinal = eff1;
+        else if (eff2 !== null) preFinal = eff2;
+
+        let ma: number | null = null;
+        if (pf !== null) {
+          ma = preFinal !== null ? (preFinal + pf) / 2 : pf;
+        } else {
+          ma = preFinal;
+        }
+
+        const b1Str = b1 !== null ? b1.toFixed(1).replace('.', ',') : '-';
+        const b2Str = b2 !== null ? b2.toFixed(1).replace('.', ',') : '-';
+        const soma1Str = soma1 !== null ? soma1.toFixed(1).replace('.', ',') : '-';
+        const r1Str = r1 !== null ? r1.toFixed(1).replace('.', ',') : '-';
+        const b3Str = b3 !== null ? b3.toFixed(1).replace('.', ',') : '-';
+        const b4Str = b4 !== null ? b4.toFixed(1).replace('.', ',') : '-';
+        const soma2Str = soma2 !== null ? soma2.toFixed(1).replace('.', ',') : '-';
+        const r2Str = r2 !== null ? r2.toFixed(1).replace('.', ',') : '-';
+        const pfStr = pf !== null ? pf.toFixed(1).replace('.', ',') : '-';
+        const maStr = ma !== null ? ma.toFixed(1).replace('.', ',') : '-';
+
+        csvContent += `${st.rollNumber},"${st.name}",${b1Str},${b2Str},${soma1Str},${r1Str},${b3Str},${b4Str},${soma2Str},${r2Str},${pfStr},${maStr}\n`;
+      });
+
+      csvContent += `TOTAL DE ALUNOS COM SOMA ABAIXO DE 14.0 (RECUPERAÇÃO),,,${countSem1Below} aluno(s),,,,,,${countSem2Below} aluno(s),,\n`;
+    }
 
     // Force UTF-8 download with BOM for Excel compat
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -374,7 +500,7 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
       `}</style>
 
       {/* Main Panel */}
-      <div id="report-selectors-pane" className="grid grid-cols-2 md:grid-cols-5 gap-3 bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800">
+      <div id="report-selectors-pane" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 bg-zinc-900/60 p-3 rounded-2xl border border-zinc-800">
         <button
           id="select-report-grades-btn"
           onClick={() => setActiveReport('grades')}
@@ -386,6 +512,19 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
         >
           <FileText className="w-4 h-4 text-sky-400 shrink-0" />
           Boletim de Notas
+        </button>
+
+        <button
+          id="select-report-annual-btn"
+          onClick={() => setActiveReport('annual')}
+          className={`flex items-center gap-2 p-3 rounded-xl font-semibold text-xs tracking-tight border transition cursor-pointer ${
+            activeReport === 'annual'
+              ? 'bg-blue-600 border-blue-500 text-white shadow shadow-blue-500/10'
+              : 'bg-zinc-950 border-zinc-800 text-zinc-300 hover:bg-zinc-900'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4 text-amber-400 shrink-0" />
+          Relatório Anual
         </button>
 
         <button
@@ -734,6 +873,289 @@ export default function TabEReports({ schoolId, classId, subjectId, bimonthly, i
               <div className="text-[10px] text-zinc-500 font-medium pt-3 leading-relaxed">
                 <p>* Descritores Bimestrais cadastrados: T1 = {t1Label}; T2 = {t2Label}; T3 = {t3Label}; T4 = {t4Label}; T5 = {t5Label}</p>
                 <p>* Nota de corte para aprovação do bimestre: 7.0 (A recuperação é realizada ao fim de cada semestre)</p>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* RELATÓRIO ANUAL DE DESEMPENHO E RECUPERAÇÃO */}
+        {activeReport === 'annual' && (() => {
+          let countSem1Below = 0;
+          let countSem2Below = 0;
+          let countTotalRec = 0;
+
+          const rows = students.map((st) => {
+            const b1 = getStudentBimonthlyVal(st.id!, 1);
+            const b2 = getStudentBimonthlyVal(st.id!, 2);
+            const b3 = getStudentBimonthlyVal(st.id!, 3);
+            const b4 = getStudentBimonthlyVal(st.id!, 4);
+
+            const hasSem1 = b1 !== null || b2 !== null;
+            const soma1 = hasSem1 ? (b1 ?? 0) + (b2 ?? 0) : null;
+            const sem1Below = soma1 !== null && soma1 < 14.0;
+            if (sem1Below) countSem1Below++;
+
+            const hasSem2 = b3 !== null || b4 !== null;
+            const soma2 = hasSem2 ? (b3 ?? 0) + (b4 ?? 0) : null;
+            const sem2Below = soma2 !== null && soma2 < 14.0;
+            if (sem2Below) countSem2Below++;
+
+            if (sem1Below || sem2Below) countTotalRec++;
+
+            const extra = extraGrades.find(eg => eg.studentId === st.id!);
+            const r1 = extra?.recSem1 !== undefined && extra.recSem1 !== null ? Number(extra.recSem1) : null;
+            const r2 = extra?.recSem2 !== undefined && extra.recSem2 !== null ? Number(extra.recSem2) : null;
+            const pf = extra?.finalExam !== undefined && extra.finalExam !== null ? Number(extra.finalExam) : null;
+
+            // Calculate media anual
+            const baseSem1Avg = hasSem1 ? (soma1! / 2) : null;
+            const eff1 = (r1 !== null) ? Math.max(baseSem1Avg ?? 0, r1 > 10 ? r1 / 2 : r1) : baseSem1Avg;
+
+            const baseSem2Avg = hasSem2 ? (soma2! / 2) : null;
+            const eff2 = (r2 !== null) ? Math.max(baseSem2Avg ?? 0, r2 > 10 ? r2 / 2 : r2) : baseSem2Avg;
+
+            let preFinal: number | null = null;
+            if (eff1 !== null && eff2 !== null) preFinal = (eff1 + eff2) / 2;
+            else if (eff1 !== null) preFinal = eff1;
+            else if (eff2 !== null) preFinal = eff2;
+
+            let ma: number | null = null;
+            if (pf !== null) {
+              ma = preFinal !== null ? (preFinal + pf) / 2 : pf;
+            } else {
+              ma = preFinal;
+            }
+
+            return {
+              st,
+              b1,
+              b2,
+              soma1,
+              sem1Below,
+              r1,
+              b3,
+              b4,
+              soma2,
+              sem2Below,
+              r2,
+              pf,
+              ma
+            };
+          });
+
+          return (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
+                <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Total de Alunos</p>
+                    <p className="text-xl font-black text-white mt-0.5">{students.length}</p>
+                  </div>
+                  <div className="p-2.5 bg-blue-500/10 text-blue-400 rounded-xl">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Recuperação 1º Semestre</p>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <p className={`text-xl font-black ${countSem1Below > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {countSem1Below}
+                      </p>
+                      <span className="text-xs text-zinc-500">alunos (Soma &lt; 14)</span>
+                    </div>
+                  </div>
+                  <div className={`p-2.5 rounded-xl ${countSem1Below > 0 ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Recuperação 2º Semestre</p>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <p className={`text-xl font-black ${countSem2Below > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                        {countSem2Below}
+                      </p>
+                      <span className="text-xs text-zinc-500">alunos (Soma &lt; 14)</span>
+                    </div>
+                  </div>
+                  <div className={`p-2.5 rounded-xl ${countSem2Below > 0 ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                    <AlertTriangle className="w-5 h-5" />
+                  </div>
+                </div>
+
+                <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[11px] text-zinc-400 font-medium">Total de Alunos em Rec.</p>
+                    <div className="flex items-baseline gap-1.5 mt-0.5">
+                      <p className={`text-xl font-black ${countTotalRec > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {countTotalRec}
+                      </p>
+                      <span className="text-xs text-zinc-500">aluno(s) único(s)</span>
+                    </div>
+                  </div>
+                  <div className="p-2.5 bg-amber-500/10 text-amber-400 rounded-xl">
+                    <Award className="w-5 h-5" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Title Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h4 className="text-zinc-200 print:text-black font-bold text-xs uppercase tracking-wider flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-amber-400 print:hidden" />
+                  Relatório Anual de Desempenho e Recuperação
+                </h4>
+                <span className="text-[11px] text-zinc-400 font-medium print:text-black">
+                  Média de Aprovação Semestral: <strong>14.0 pontos</strong> (Soma de 2 Bimesteres)
+                </span>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/20 print:border-zinc-400">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="bg-zinc-900 print:bg-zinc-100 border-b border-zinc-800 text-zinc-400 print:text-black text-[11px] font-bold uppercase tracking-wider select-none">
+                      <th className="py-3.5 px-3 w-10 text-center">Nº</th>
+                      <th className="py-3.5 px-4 min-w-[180px]">Nome do Aluno</th>
+                      <th className="py-3.5 px-2.5 text-center w-16">1º Bim</th>
+                      <th className="py-3.5 px-2.5 text-center w-16">2º Bim</th>
+                      <th className="py-3.5 px-3 text-center w-28 bg-zinc-850/60 print:bg-zinc-200 text-amber-300 font-extrabold border-x border-zinc-800">
+                        Soma 1º Sem<span className="block text-[8px] text-zinc-400 font-normal">Média 14.0</span>
+                      </th>
+                      <th className="py-3.5 px-3 text-center w-20 bg-amber-500/5 text-amber-400 font-bold border-r border-zinc-800">
+                        R1<span className="block text-[8px] text-zinc-500 font-normal">Rec. 1º Sem</span>
+                      </th>
+                      <th className="py-3.5 px-2.5 text-center w-16">3º Bim</th>
+                      <th className="py-3.5 px-2.5 text-center w-16">4º Bim</th>
+                      <th className="py-3.5 px-3 text-center w-28 bg-zinc-850/60 print:bg-zinc-200 text-amber-300 font-extrabold border-x border-zinc-800">
+                        Soma 2º Sem<span className="block text-[8px] text-zinc-400 font-normal">Média 14.0</span>
+                      </th>
+                      <th className="py-3.5 px-3 text-center w-20 bg-amber-500/5 text-amber-400 font-bold border-r border-zinc-800">
+                        R2<span className="block text-[8px] text-zinc-500 font-normal">Rec. 2º Sem</span>
+                      </th>
+                      <th className="py-3.5 px-3 text-center w-20 bg-rose-500/5 text-red-400 font-bold border-r border-zinc-800">
+                        PF<span className="block text-[8px] text-red-400/60 font-normal">Prova Final</span>
+                      </th>
+                      <th className="py-3.5 px-3 text-center w-24 bg-blue-950/40 text-blue-400 font-black">
+                        Média Anual
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-800/60 text-xs font-mono">
+                    {students.length === 0 ? (
+                      <tr>
+                        <td colSpan={12} className="py-8 text-center text-zinc-500 font-sans">
+                          Nenhum aluno cadastrado nesta turma.
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row) => {
+                        const { st, b1, b2, soma1, sem1Below, r1, b3, b4, soma2, sem2Below, r2, pf, ma } = row;
+
+                        return (
+                          <tr key={st.id} className="hover:bg-white/5 transition-colors text-zinc-300 print:text-black">
+                            <td className="py-3 px-3 text-center font-bold text-zinc-500 print:text-black">{st.rollNumber}</td>
+                            <td className="py-3 px-4 font-sans font-medium text-zinc-200 print:text-black">{st.name}</td>
+
+                            {/* 1º Bim */}
+                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                              {b1 !== null ? b1.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* 2º Bim */}
+                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                              {b2 !== null ? b2.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* Soma 1º Semestre */}
+                            <td className={`py-3 px-3 text-center font-black border-x border-zinc-800 ${
+                              soma1 === null
+                                ? 'text-zinc-600'
+                                : sem1Below
+                                ? 'text-red-400 bg-red-500/10 print:bg-red-100 print:text-red-800'
+                                : 'text-emerald-400 bg-emerald-500/5 print:bg-emerald-50 print:text-emerald-800'
+                            }`}>
+                              {soma1 !== null ? soma1.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* R1 */}
+                            <td className="py-3 px-3 text-center bg-amber-500/5 text-amber-400 font-bold border-r border-zinc-800">
+                              {r1 !== null ? r1.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* 3º Bim */}
+                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                              {b3 !== null ? b3.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* 4º Bim */}
+                            <td className="py-3 px-2.5 text-center text-zinc-300 print:text-black">
+                              {b4 !== null ? b4.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* Soma 2º Semestre */}
+                            <td className={`py-3 px-3 text-center font-black border-x border-zinc-800 ${
+                              soma2 === null
+                                ? 'text-zinc-600'
+                                : sem2Below
+                                ? 'text-red-400 bg-red-500/10 print:bg-red-100 print:text-red-800'
+                                : 'text-emerald-400 bg-emerald-500/5 print:bg-emerald-50 print:text-emerald-800'
+                            }`}>
+                              {soma2 !== null ? soma2.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* R2 */}
+                            <td className="py-3 px-3 text-center bg-amber-500/5 text-amber-400 font-bold border-r border-zinc-800">
+                              {r2 !== null ? r2.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* Prova Final */}
+                            <td className="py-3 px-3 text-center bg-rose-500/5 text-red-400 font-bold border-r border-zinc-800">
+                              {pf !== null ? pf.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+
+                            {/* Média Anual */}
+                            <td className="py-3 px-3 text-center font-black text-blue-400 bg-blue-950/20 print:bg-blue-50 print:text-blue-900">
+                              {ma !== null ? ma.toFixed(1).replace('.', ',') : '-'}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+
+                  {/* Summary Footer Row - Counts of students below 14.0 */}
+                  {students.length > 0 && (
+                    <tfoot>
+                      <tr className="bg-zinc-900/90 print:bg-zinc-200 border-t-2 border-zinc-700 text-xs font-sans">
+                        <td colSpan={4} className="py-3.5 px-4 font-bold text-zinc-300 print:text-black text-right">
+                          Alunos de Recuperação (Soma &lt; 14.0 pts):
+                        </td>
+                        <td className="py-3.5 px-3 text-center border-x border-zinc-800 font-black">
+                          <span className={`px-2 py-0.5 rounded ${countSem1Below > 0 ? 'bg-red-500/20 text-red-400 font-extrabold' : 'text-emerald-400'}`}>
+                            {countSem1Below} {countSem1Below === 1 ? 'aluno' : 'alunos'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 text-center border-r border-zinc-800 text-zinc-500 font-mono">-</td>
+                        <td colSpan={2} className="py-3.5 px-2 text-right text-zinc-400 font-medium print:text-black">
+                          Abaixo de 14:
+                        </td>
+                        <td className="py-3.5 px-3 text-center border-x border-zinc-800 font-black">
+                          <span className={`px-2 py-0.5 rounded ${countSem2Below > 0 ? 'bg-red-500/20 text-red-400 font-extrabold' : 'text-emerald-400'}`}>
+                            {countSem2Below} {countSem2Below === 1 ? 'aluno' : 'alunos'}
+                          </span>
+                        </td>
+                        <td colSpan={3} className="py-3.5 px-3 bg-zinc-950/40 text-center text-zinc-400 font-mono text-[11px]">
+                          Total Geral em Rec: <strong className="text-amber-400 font-extrabold">{countTotalRec} alunos</strong>
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
               </div>
             </div>
           );
