@@ -5,6 +5,7 @@ import {
   collection,
   doc,
   getDocs,
+  getDoc,
   getDocFromServer,
   setDoc,
   deleteDoc,
@@ -269,7 +270,12 @@ export async function testFirestoreConnection(): Promise<{ success: boolean; err
   try {
     const testDocRef = doc(dbInstance, 'coordinators', '_connectivity_test_');
     logDetailedFirebaseDebug('testFirestoreConnection - Buscando documento de teste: coordinators/_connectivity_test_');
-    await withTimeout(getDocFromServer(testDocRef), 4000);
+    try {
+      await withTimeout(getDocFromServer(testDocRef), 8000);
+    } catch (firstErr) {
+      console.warn("getDocFromServer timed out or failed, attempting getDoc fallback...", firstErr);
+      await withTimeout(getDoc(testDocRef), 6000);
+    }
     logDetailedFirebaseDebug('testFirestoreConnection - SUCESSO! Conectividade confirmada.');
     return { success: true };
   } catch (err: any) {
@@ -437,7 +443,7 @@ export async function syncProfessorsListInCloud() {
       professorsQuery = query(collection(dbInstance, 'professors'), where('schoolId', '==', restrictSchoolId));
     }
 
-    const snapshot = await withTimeout(getDocs(professorsQuery), 4000);
+    const snapshot = await withTimeout(getDocs(professorsQuery), 8000);
     const cloudList: ProfessorAccount[] = [];
     
     snapshot.forEach((doc) => {
@@ -563,12 +569,12 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
   try {
     const userLower = username.toLowerCase();
     
-    // Fetch all tables in parallel with a snappy 3.5s per-table timeout and 5s max overall timeout!
+    // Fetch all tables in parallel with an 8s per-table timeout and 15s max overall timeout
     const fetchAllPromise = Promise.all(
       TABLES_TO_SYNC.map(async (tableName) => {
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          const snapshot = await withTimeout(getDocs(colRef), 3500);
+          const snapshot = await withTimeout(getDocs(colRef), 8000);
           const records: any[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data();
@@ -583,7 +589,7 @@ export async function pullTeacherDataFromCloud(username: string, dexieDb: any): 
       })
     );
 
-    const results = await withTimeout(fetchAllPromise, 5000);
+    const results = await withTimeout(fetchAllPromise, 15000);
     const totalRecords = results.reduce((sum, item) => sum + item.records.length, 0);
 
     // Only clear and replace local records if cloud actually returned data
@@ -640,8 +646,8 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
         let cloudDocIds: string[] = [];
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
-          // Snappy 4-second timeout per table fetch to handle quota limits or network dropouts gracefully
-          const snapshot = await withTimeout(getDocs(colRef), 4000);
+          // 8-second timeout per table fetch to handle network latency gracefully
+          const snapshot = await withTimeout(getDocs(colRef), 8000);
           snapshot.forEach((doc) => {
             cloudDocIds.push(doc.id);
           });
@@ -788,7 +794,7 @@ export async function syncCoordinatorsListInCloud(): Promise<CoordinatorAccount[
 
   try {
     const coordsCol = collection(dbInstance, 'coordinators');
-    const snapshot = await withTimeout(getDocs(coordsCol), 4000);
+    const snapshot = await withTimeout(getDocs(coordsCol), 8000);
     const cloudList: CoordinatorAccount[] = [];
     
     snapshot.forEach((doc) => {
