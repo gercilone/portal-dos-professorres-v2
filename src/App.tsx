@@ -16,8 +16,9 @@ import CoordClassReports from './components/CoordClassReports';
 import CoordStudentReports from './components/CoordStudentReports';
 import { sortClasses } from './types';
 import { deduplicateLocalDatabase, deduplicateGlobalDatabase } from './utils/deduplicate';
-import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud, BarChart2 } from 'lucide-react';
+import { FileText, CheckSquare, Trophy, Calendar, FileBarChart2, Settings, Sparkles, Lock, User, Eye, EyeOff, LogOut, Key, AlertTriangle, Plus, ShieldAlert, Shield, Search, UserPlus, Trash2, ArrowLeft, Check, LogIn, Users, Pencil, X, School, BookOpen, Archive, RefreshCw, Cloud, BarChart2, HardDrive, CloudUpload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { uploadBackupToDrive, getBackupFilename } from './googleDrive';
 import {
   deleteProfessorFromCloud,
   deleteCoordinatorFromCloud,
@@ -537,7 +538,12 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
+  // LOGOUT MODAL STATES
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isDriveLogoutUploading, setIsDriveLogoutUploading] = useState(false);
+  const [logoutDriveMsg, setLogoutDriveMsg] = useState('');
+
+  const executeLogoutImmediate = async () => {
     sessionStorage.removeItem('portal_is_authenticated');
     sessionStorage.removeItem('portal_session_sync_pulled');
     localStorage.removeItem('portal_is_authenticated_persistent');
@@ -586,6 +592,54 @@ export default function App() {
     setSelectedProf(null);
     setIsAuthenticated(false);
     window.location.reload();
+  };
+
+  const handleLogout = () => {
+    setIsLogoutModalOpen(true);
+  };
+
+  const handleLogoutWithDriveBackup = async () => {
+    try {
+      setIsDriveLogoutUploading(true);
+      setLogoutDriveMsg('Gerando dados de backup...');
+      
+      const backupData = {
+        type: 'full_portal_backup_v2',
+        meta: {
+          activeUser: localStorage.getItem('portal_active_user'),
+          activeUserDb: localStorage.getItem('portal_active_user_db'),
+          teacherName: localStorage.getItem('portal_teacher_name'),
+          username: localStorage.getItem('portal_username'),
+          authEnabled: localStorage.getItem('portal_auth_enabled'),
+          professorsList: localStorage.getItem('portal_professors_list'),
+          coordinatorsList: localStorage.getItem('portal_coordinators_list'),
+        },
+        schools: await db.schools.toArray(),
+        classes: await db.classes.toArray(),
+        subjects: await db.subjects.toArray(),
+        students: await db.students.toArray(),
+        subjectWorkloads: await db.subjectWorkloads.toArray(),
+        weeklySchedule: await db.weeklySchedule.toArray(),
+        bimonthlyGrades: await db.bimonthlyGrades.toArray(),
+        assignmentDescriptions: await db.assignmentDescriptions.toArray(),
+        lessons: await db.lessons.toArray(),
+        attendance: await db.attendance.toArray(),
+        vistoColumns: await db.vistoColumns.toArray(),
+        studentVistos: await db.studentVistos.toArray(),
+        vistoRankingScores: await db.vistoRankingScores.toArray(),
+        extraGrades: await db.extraGrades.toArray()
+      };
+
+      const filename = getBackupFilename();
+      setLogoutDriveMsg('Salvando no seu Google Drive...');
+      await uploadBackupToDrive(backupData, filename);
+    } catch (err) {
+      console.error('Logout Drive backup failed:', err);
+    } finally {
+      setIsDriveLogoutUploading(false);
+      setLogoutDriveMsg('');
+      await executeLogoutImmediate();
+    }
   };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -2602,6 +2656,78 @@ export default function App() {
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* LOGOUT CONFIRMATION & GOOGLE DRIVE AUTO-BACKUP MODAL */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-800">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <LogOut className="w-5 h-5 text-rose-400" /> Sair do Portal do Professor
+              </h3>
+              <button
+                type="button"
+                disabled={isDriveLogoutUploading}
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Deseja realizar o <strong>backup automático</strong> de todos os seus diários e notas no <strong>Google Drive</strong> antes de encerrar sua sessão?
+            </p>
+
+            {logoutDriveMsg && (
+              <div className="text-xs text-emerald-300 bg-emerald-500/10 p-3 rounded-xl border border-emerald-500/20 flex items-center gap-2 font-medium">
+                <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>{logoutDriveMsg}</span>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-2">
+              <button
+                type="button"
+                disabled={isDriveLogoutUploading}
+                onClick={handleLogoutWithDriveBackup}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow cursor-pointer"
+              >
+                {isDriveLogoutUploading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Salvando no Google Drive...</span>
+                  </>
+                ) : (
+                  <>
+                    <HardDrive className="w-4 h-4" />
+                    <span>Fazer Backup no Google Drive e Sair</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                disabled={isDriveLogoutUploading}
+                onClick={executeLogoutImmediate}
+                className="w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-rose-400" />
+                <span>Sair sem Fazer Backup</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isDriveLogoutUploading}
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="w-full py-2 text-zinc-500 hover:text-zinc-300 text-xs font-medium text-center transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

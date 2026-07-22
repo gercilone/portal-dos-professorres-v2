@@ -180,10 +180,10 @@ export function getFirestoreInstance() {
     try {
       firestoreInstance = initializeFirestore(app, {
         experimentalAutoDetectLongPolling: true
-      }, firebaseConfig.firestoreDatabaseId || '(default)');
+      }, (firebaseConfig as any).firestoreDatabaseId || '(default)');
     } catch (e) {
       // Fallback to standard getFirestore if initializeFirestore fails
-      firestoreInstance = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+      firestoreInstance = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
     }
 
     // Silently sign in anonymously to ensure request.auth is populated in Firestore rules
