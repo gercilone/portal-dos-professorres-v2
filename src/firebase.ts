@@ -51,6 +51,34 @@ export function cleanDataForFirestore(obj: any): any {
   return obj;
 }
 
+// Helper to check if cloud doc data matches local clean data to avoid redundant writes
+export function isFirestoreDataEqual(cloudData: any, localCleaned: any): boolean {
+  if (cloudData === localCleaned) return true;
+  if (!cloudData || !localCleaned) return false;
+
+  const cleanedCloud = cleanDataForFirestore(cloudData);
+  const keysCloud = Object.keys(cleanedCloud).sort();
+  const keysLocal = Object.keys(localCleaned).sort();
+
+  if (keysCloud.length !== keysLocal.length) return false;
+
+  for (let i = 0; i < keysCloud.length; i++) {
+    const key = keysCloud[i];
+    if (key !== keysLocal[i]) return false;
+
+    const val1 = cleanedCloud[key];
+    const val2 = localCleaned[key];
+
+    if (typeof val1 === 'object' && val1 !== null && typeof val2 === 'object' && val2 !== null) {
+      if (JSON.stringify(val1) !== JSON.stringify(val2)) return false;
+    } else if (val1 !== val2) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Lazy safe Firestore initialization
 let firestoreInstance: any = null;
 
@@ -661,7 +689,7 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
   try {
     const userLower = username.toLowerCase();
 
-    // 1. Fetch all local records and cloud document IDs in parallel to minimize latency
+    // 1. Fetch all local records and cloud documents in parallel to minimize latency
     const tablesData = await Promise.all(
       TABLES_TO_SYNC.map(async (tableName) => {
         let records: any[] = [];
@@ -669,23 +697,23 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
           records = await dexieDb[tableName].toArray();
         }
         
-        let cloudDocIds: string[] = [];
+        const cloudDocsMap = new Map<string, any>();
         try {
           const colRef = collection(dbInstance, `diaries/${userLower}/${tableName}`);
           // Snappy 4-second timeout per table fetch to handle quota limits or network dropouts gracefully
           const snapshot = await withTimeout(getDocs(colRef), 4000);
-          snapshot.forEach((doc) => {
-            cloudDocIds.push(doc.id);
+          snapshot.forEach((docSnap) => {
+            cloudDocsMap.set(docSnap.id, docSnap.data());
           });
         } catch (err) {
-          console.warn(`Could not fetch cloud doc IDs for ${tableName}:`, err);
+          console.warn(`Could not fetch cloud docs for ${tableName}:`, err);
           const errMsg = String(err instanceof Error ? err.message : err || '').toLowerCase();
           if (errMsg.includes('quota') || errMsg.includes('resource-exhausted') || errMsg.includes('timeout') || errMsg.includes('time out')) {
             throw err;
           }
         }
         
-        return { tableName, records, cloudDocIds };
+        return { tableName, records, cloudDocsMap };
       })
     );
 
@@ -694,12 +722,12 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
     let currentBatch = writeBatch(dbInstance);
     let opCount = 0;
 
-    for (const { tableName, records, cloudDocIds } of tablesData) {
+    for (const { tableName, records, cloudDocsMap } of tablesData) {
       const colPath = `diaries/${userLower}/${tableName}`;
       const localIds = new Set(records.map(r => String(r.id)));
 
       // A. Delete cloud records that no longer exist locally
-      for (const cloudDocId of cloudDocIds) {
+      for (const [cloudDocId] of cloudDocsMap) {
         if (!localIds.has(cloudDocId)) {
           const docRef = doc(dbInstance, colPath, cloudDocId);
           currentBatch.delete(docRef);
@@ -713,11 +741,18 @@ export async function pushTeacherDataToCloud(username: string, dexieDb: any, isM
         }
       }
 
-      // B. Set or update local records in the cloud
+      // B. Set or update local records in the cloud ONLY if modified
       for (const record of records) {
         if (!record.id) continue;
-        const docRef = doc(dbInstance, colPath, String(record.id));
         const cleanedRecord = cleanDataForFirestore(record);
+        const cloudData = cloudDocsMap.get(String(record.id));
+
+        // Skip write if the cloud document is already identical to the local record
+        if (cloudData && isFirestoreDataEqual(cloudData, cleanedRecord)) {
+          continue;
+        }
+
+        const docRef = doc(dbInstance, colPath, String(record.id));
         currentBatch.set(docRef, cleanedRecord);
         opCount++;
 
